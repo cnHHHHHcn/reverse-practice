@@ -77,13 +77,19 @@ int main() {
 	// void* pTargetStaticVariable = &tg1.s_a;
 	// void* ptg = &tg1;
 	// void* ptg = &tg2;
+
+	// [验证点 1 & 2] 打印地址，验证所有实例与类名访问的都是同一个全局地址
 	std::cout << "Class Target Public Static s_a Address: " << (void*)&Target::s_a << std::endl;
-	std::cout << "Instance Object tg1 Public Static s_a Address: " << (void*)& tg1.s_a << std::endl;
+	std::cout << "Instance Object tg1 Public Static s_a Address: " << (void*)&tg1.s_a << std::endl;
 	std::cout << "Instance Object tg2 Public Static s_a Address: " << (void*)&tg2.s_a << std::endl;
 	std::cout << std::endl;
+
+	// [验证点 2] 打印初始值，确认数据一致
 	std::cout << "Class Target Public Static s_a: " << Target::s_a << std::endl;
 	std::cout << "Instance Object tg1 Public Static s_a: " << (char)tg1.s_a << std::endl;
 	std::cout << "Instance Object tg2 Public Static s_a: " << (char)tg2.s_a << std::endl;
+
+	// [验证点 2] 修改其中一个实例的静态成员，观察全局变化
 	tg1.s_a = 0x30;
 	std::cout << std::endl;
 	std::cout << "Change Instance Object tg1 Public s_a" << std::endl;
@@ -92,14 +98,23 @@ int main() {
 	std::cout << "Instance Object tg2 Public Static s_a: " << (char)tg2.s_a << std::endl;
 
 	std::cout << std::endl;
+
+	// [验证点 3] 计算类大小，证明 static 成员不占用对象实例空间
 	size_t ClassVariableSize = sizeof(Target);
 	std::cout << "Class Target Variable Size: " << (size_t)ClassVariableSize << " Bytes" << std::endl;
+
+	// 打印实例在栈上的内存范围
 	std::cout << "Instance Object tg1 Variable Memory Range: " << (void*)&tg1 << " - " << (void*)((char*)&tg1 + ClassVariableSize) << std::endl;
 	std::cout << "Instance Object tg2 Variable Memory Range: " << (void*)&tg2 << " - " << (void*)((char*)&tg2 + ClassVariableSize) << std::endl;
+
 	std::cout << std::endl;
+
+	// [验证点 4] 打印静态成员在全局区的地址分布
 	std::cout << "Class Target Public Static s_a Address: " << (void*)&Target::s_a << " (Size: 1 Bytes; Type: char)" << std::endl;
 	std::cout << "Class Target Public Static s_b Address: " << (void*)&Target::s_b << " (Size: 2 Bytes; Type: short)" << std::endl;
 	std::cout << "Class Target Public Static s_c Address: " << (void*)&Target::s_c << " (Size: 4 Bytes; Type: int)" << std::endl;
+
+	// 计算静态成员占用的总内存范围
 	size_t ClassStaticVariableSize = ((char*)&Target::s_c - (char*)&Target::s_a) + sizeof(int);
 	std::cout << "Class Target Static Variable Size: " << std::dec << ClassStaticVariableSize << " Bytes" << std::hex << std::endl;
 	std::cout << "Class Target Static Variable Memory Range: " << (void*)&Target::s_a << " - " << (void*)((char*)&Target::s_a + ClassStaticVariableSize) << std::endl;

@@ -54,20 +54,25 @@ protected:
 
 int main()
 {
+    std::cout << "[ Reverse Engineering Project : Memory Layout Penetration ]\n" << std::endl;
+
     Target tg1, tg2;
     char* ptg = nullptr;
-    
-    std::cout << "[ Reverse Engineering Project : Memory Layout Penetration ]\n" << std::endl;
-    
     std::cout << std::hex;
 
     ptg = (char*)&tg1;
-    std::cout << "tg1 Address:" << (void*)ptg << std::endl; 
+    std::cout << "tg1 Address:" << (void*)ptg << std::endl;
     std::cout << "=== [Object tg1 before Penetration] ===" << std::endl;
     tg1.Func();
+
+    // --- 开始内存穿透操作 ---
     tg1.a = 0x11111111;
+    // 偏移量 sizeof(int) 即跳过 public 成员 'a'，直接写入 private 成员 'b' (short)
     *(short*)(ptg + sizeof(int)) = 0xB00B;
+    // 偏移量 sizeof(int) + sizeof(short) 跳过 'a' 和 'b'，直接写入 protected 成员 'c' (char)
     *(char*)(ptg + sizeof(int) + sizeof(short)) = 0x41;
+    // --- 内存穿透结束 ---
+
     std::cout << "=== [Object tg1 After Penetration] ===" << std::endl;
     tg1.Func();
 
@@ -77,9 +82,15 @@ int main()
     std::cout << "tg2 Address:" << (void*)ptg << std::endl;
     std::cout << "=== [Object tg2 before Penetration] ===" << std::endl;
     tg2.Func();
+
+    // --- 开始内存穿透操作 ---
     tg2.a = 0x22222222;
+    // 同样逻辑：跳过 int a，修改 private short b
     *(short*)(ptg + sizeof(int)) = 0xBB00;
+    // 同样逻辑：跳过 int a + short b，修改 protected char c
     *(char*)(ptg + sizeof(int) + sizeof(short)) = 0x42;
+    // --- 内存穿透结束 ---
+
     std::cout << "=== [Object tg2 After Penetration] ===" << std::endl;
     tg2.Func();
     return 0;
