@@ -37,12 +37,12 @@ uintptr_t GetModuleBaseAddress(DWORD pid, const wchar_t* Module) {
 * 1. RVA 与 FOA 互转 (RVA <-> File Offset)  yes
 * 2. 获取导入表 (Import Table)				yes
 * 3. 获取导出表 (Export Table)				yes
-* 4. 获取资源表 (Resource Table)			
-* 5. 手动映射 (Manual Map)
+* 4. 获取资源表 (Resource Table)			yes
+* 5. 手动映射 (Manual Map)					pass
 * 6. 重定位表处理 (Relocation Table)		yes
 * 7. 校验和计算 (Checksum)					yes
 * 8. 获取节区详细信息						pass easy
-* 9. 壳检测 (Packers Detection)
+* 9. 壳检测 (Packers Detection)				
 */
 
 /*
@@ -56,39 +56,40 @@ namespace PE {
 	// 错误状态枚举，表示各种可能的错误情况
 	enum STATUS {
 		// 基础错误
-		PE_ERROR_SUCCESS,							// 成功
-		PE_ERROR_INVALID_PARAMETER,					// 无效参数
-		PE_ERROR_INVALID_FORMAT,					// 无效的 PE 格式
+		PE_STATUS_SUCCESS,							// 成功
+		PE_STATUS_INVALID_PARAMETER,				// 无效参数
+		PE_STATUS_INVALID_FORMAT,					// 无效的 PE 格式
 
 		// 文件操作相关错误
-		PE_ERROR_FILE_OPEN_FAILURE,					// 文件打开失败
-		PE_ERROR_FILE_READ_FAILURE,					// 文件读取失败
-		PE_ERROR_FILE_WRITE_FAILURE,				// 文件写入失败
-		PE_ERROR_FILE_NOT_FOUND,					// 文件未找到
-		PE_ERROR_ACCESS_DENIED,						// 访问被拒绝
+		PE_STATUS_FILE_OPEN_FAILURE,				// 文件打开失败
+		PE_STATUS_FILE_READ_FAILURE,				// 文件读取失败
+		PE_STATUS_FILE_WRITE_FAILURE,				// 文件写入失败
+		PE_STATUS_FILE_NOT_FOUND,					// 文件未找到
+		PE_STATUS_FILE_ACCESS_DENIED,				// 文件访问被拒绝
+		PE_STATUS_FILE_INVALID_SIZE,				// 文件大小无效
 		
 		// PE 结构相关错误
-		PE_ERROR_ARCH_MISMATCH,						// 架构不匹配
-		PE_ERROR_BUILD_IMAGE_FAILURE,				// 构建内存映像失败
-		PE_ERROR_FIX_IMPORT_FAILURE,				// 修复导入表失败
-		PE_ERROR_GET_EXPORT_FAILURE,				// 获取导出表失败
-		PE_ERROR_SET_SECTION_PROPERTY_FAILURE,		// 设置节属性失败
-		PE_ERROR_GET_RESOURCE_FAILURE,				// 获取资源表失败
-		PE_ERROR_GET_FOA_FAILURE,					// 获取 FOA 失败
-		PE_ERROR_GET_RVA_FAILURE,					// 获取 RVA 失败
+		PE_STATUS_ARCH_MISMATCH,					// 架构不匹配
+		PE_STATUS_BUILD_IMAGE_FAILURE,				// 构建内存映像失败
+		PE_STATUS_FIX_IMPORT_FAILURE,				// 修复导入表失败
+		PE_STATUS_GET_EXPORT_FAILURE,				// 获取导出表失败
+		PE_STATUS_SET_SECTION_PROPERTY_FAILURE,		// 设置节属性失败
+		PE_STATUS_GET_RESOURCE_FAILURE,				// 获取资源表失败
+		PE_STATUS_GET_FOA_FAILURE,					// 获取 FOA 失败
+		PE_STATUS_GET_RVA_FAILURE,					// 获取 RVA 失败
 
 		// 内存操作相关错误
-		PE_ERROR_PROCESS_OPEN_FAILURE,				// 打开进程失败
-		PE_ERROR_REMOTE_MEMORY_ALLOCATION_FAILURE,	// 远程内存分配失败
-		PE_ERROR_REMOTE_MEMORY_WRITE_FAILURE,		// 远程内存写入失败
-		PE_ERROR_REMOTE_MEMORY_READ_FAILURE,		// 远程内存读取失败
-		PE_ERROR_LOCAL_MEMORY_ALLOCATION_FAILURE,	// 本地内存分配失败
-		PE_ERROR_LOCAL_MEMORY_WRITE_FAILURE,		// 本地内存写入失败
-		PE_ERROR_LOCAL_MEMORY_READ_FAILURE,			// 本地内存读取失败
-		PE_ERROR_LOAD_MODULE_FAILURE,				// 加载模块失败
-		PE_ERROR_GET_MODULE_BASE_FAILURE,			// 获取模块基址失败
-		PE_ERROR_MODULE_NOT_FOUND,					// 模块未找到
-		PE_ERROR_MODULE_RANGE_NOT_IN				// 模块范围不在预期范围内
+		PE_STATUS_PROCESS_OPEN_FAILURE,				// 打开进程失败
+		PE_STATUS_REMOTE_MEMORY_ALLOCATION_FAILURE,	// 远程内存分配失败
+		PE_STATUS_REMOTE_MEMORY_WRITE_FAILURE,		// 远程内存写入失败
+		PE_STATUS_REMOTE_MEMORY_READ_FAILURE,		// 远程内存读取失败
+		PE_STATUS_LOCAL_MEMORY_ALLOCATION_FAILURE,	// 本地内存分配失败
+		PE_STATUS_LOCAL_MEMORY_WRITE_FAILURE,		// 本地内存写入失败
+		PE_STATUS_LOCAL_MEMORY_READ_FAILURE,		// 本地内存读取失败
+		PE_STATUS_LOAD_MODULE_FAILURE,				// 加载模块失败
+		PE_STATUS_GET_MODULE_BASE_FAILURE,			// 获取模块基址失败
+		PE_STATUS_MODULE_NOT_FOUND,					// 模块未找到
+		PE_STATUS_MODULE_RANGE_NOT_IN				// 模块范围不在预期范围内
 	};
 
 	// 节区转储枚举，表示要转储的 PE 结构部分
@@ -117,31 +118,35 @@ namespace PE {
 		GroupIcon = Icon + DIFFERENCE,
 		Version = 16,
 		Dlginclude = 17,
+		NoneResources = 0xFFFF
 	};
 
 	struct FuncInfo {
-		WORD Ordinal;
-		DWORD RVA_Address;
-		char* Name;
+		WORD Ordinal;				// 函数序号
+		DWORD RVA_Address;			// 函数的 RVA 地址
+		char* Name;					// 函数名称 (如果有的话，某些导出可能没有名称只有序号)
 	};
 
 	struct ExportInfo {
-		char PEName[48];
-		DWORD FuncCount;
-		DWORD ExportFuncSize;
-		FuncInfo* Fn;
+		char PEName[48];			// PE 文件名
+		DWORD FuncCount;			// 导出函数数量
+		DWORD ExportFuncSize;		// 导出函数表大小 (字节)
+		FuncInfo* Fn;				// 动态数组，存储所有导出函数的信息
+	};
+
+	struct ResourceItem {
+		wchar_t TypeName[32];      // 类型名 (或 ID)
+		wchar_t Name[64];          // 资源名 (或 ID)
+		wchar_t Language[16];      // 语言 ID
+		DWORD DataRVA;             // 资源数据的 RVA
+		DWORD Size;                // 资源大小
 	};
 
 	struct ResourceInfo {
-		union {
-			wchar_t* resName;
-			WORD* resID;
-		};
-		WORD resNameCount;
-		WORD resIDCount;
-		DWORD resIDOfSize;
+		ResourceItem* Items;       // 动态数组，存储所有找到的资源项
+		DWORD Count;               // 资源总数
 	};
-
+	
 	STATUS Read(const wchar_t* FileName, void*& out_pFileBuffer, DWORD& out_FileSize);
 	STATUS IsValid(void* pBuffer, IMAGE_NT_HEADERS*& out_pNtHeader);
 	STATUS GetMachineType(void* pFileBuffer, WORD& out_MachineType);
@@ -160,7 +165,8 @@ namespace PE {
 	STATUS Relocation(void* pMemoryImage, void* pRemoteImageBase);
 	STATUS SetSectionProperty(void* pFileBuffer, void* pMemoryImage);
 	STATUS SetSectionProperty(HANDLE hProcess, void* pFileBuffer, void* pMemoryImage);
-	STATUS GetResourceTable(void* pFileBuffer, ResourceType TypeID, ResourceInfo& ResInfo);
+	STATUS GetResourceTable(void* pFileBuffer, ResourceInfo& ResInfo, ResourceType TypeID = NoneResources);
+	STATUS CalculateEntropy(const void* buffer, size_t size, double& out_Entropy);
 	// STATUS MemoryToFileDump(void* pMemoryImage, const wchar_t* DumpFile);
 }
 
@@ -178,18 +184,18 @@ namespace PE {
  * @param out_pFileBuffer   [out] 输出参数，指向包含文件原始字节流的内存缓冲区指针
  * @param out_FileSize      [out] 输出参数，返回实际读取到的文件大小 (字节)
  * @return PE::STATUS       返回读取操作的状态码
- * @retval PE_ERROR_SUCCESS            读取成功
- * @retval PE_ERROR_INVALID_PARAMETER  参数无效 (FileName 为空)
- * @retval PE_ERROR_FILE_NOT_FOUND     文件不存在或无法访问
- * @retval PE_ERROR_FILE_OPEN_FAILURE  打开文件失败 (权限不足或文件被占用)
- * @retval PE_ERROR_LOCAL_MEMORY_ALLOCATION_FAILURE 内存分配失败 (系统资源不足)
+ * @retval PE_STATUS_SUCCESS            读取成功
+ * @retval PE_STATUS_INVALID_PARAMETER  参数无效 (FileName 为空)
+ * @retval PE_STATUS_FILE_NOT_FOUND     文件不存在或无法访问
+ * @retval PE_STATUS_FILE_OPEN_FAILURE  打开文件失败 (权限不足或文件被占用)
+ * @retval PE_STATUS_LOCAL_MEMORY_ALLOCATION_FAILURE 内存分配失败 (系统资源不足)
  */
 PE::STATUS  PE::Read(const wchar_t* FileName, void*& out_pFileBuffer, DWORD& out_FileSize) {
-	if (FileName == nullptr) return PE_ERROR_INVALID_PARAMETER;
+	if (FileName == nullptr) return PE_STATUS_INVALID_PARAMETER;
 	BOOL RTN = FALSE;
 	out_pFileBuffer = nullptr;
 	DWORD ReadTotalBytes = NULL;
-	if (GetFileAttributesW(FileName) == INVALID_FILE_ATTRIBUTES) return PE_ERROR_FILE_NOT_FOUND;
+	if (GetFileAttributesW(FileName) == INVALID_FILE_ATTRIBUTES) return PE_STATUS_FILE_NOT_FOUND;
 	HANDLE hFile = CreateFileW(FileName, GENERIC_READ, NULL, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 	if (hFile != INVALID_HANDLE_VALUE) {
 		LARGE_INTEGER FS;
@@ -201,14 +207,14 @@ PE::STATUS  PE::Read(const wchar_t* FileName, void*& out_pFileBuffer, DWORD& out
 				RTN = ReadFile(hFile, out_pFileBuffer, out_FileSize, &ReadTotalBytes, NULL);
 				if (RTN && out_FileSize == ReadTotalBytes) {
 					CloseHandle(hFile);
-					return PE_ERROR_SUCCESS;
+					return PE_STATUS_SUCCESS;
 				}
 				free(out_pFileBuffer);
 			}
 		}
 		CloseHandle(hFile);
 	}
-	return PE_ERROR_FILE_OPEN_FAILURE;
+	return PE_STATUS_FILE_OPEN_FAILURE;
 }
 
 /**
@@ -226,22 +232,22 @@ PE::STATUS  PE::Read(const wchar_t* FileName, void*& out_pFileBuffer, DWORD& out
  * @param out_pNtHeader   [out] 输出参数。若校验成功，该指针指向缓冲区内的 IMAGE_NT_HEADERS 结构。
  *                            调用者可直接使用此指针访问 PE 的文件头和可选头信息。
  * @return PE::STATUS     校验结果状态码
- * @retval PE_ERROR_SUCCESS          校验通过，这是一个有效的 PE 文件
- * @retval PE_ERROR_INVALID_PARAMETER 输入缓冲区指针为空
- * @retval PE_ERROR_INVALID_FORMAT    缓冲区数据不符合 PE 文件格式 (坏文件或非 PE 文件)
+ * @retval PE_STATUS_SUCCESS          校验通过，这是一个有效的 PE 文件
+ * @retval PE_STATUS_INVALID_PARAMETER 输入缓冲区指针为空
+ * @retval PE_STATUS_INVALID_FORMAT    缓冲区数据不符合 PE 文件格式 (坏文件或非 PE 文件)
  */
 PE::STATUS PE::IsValid(void* pBuffer, IMAGE_NT_HEADERS*& out_pNtHeader) {
-	if (pBuffer == nullptr) return PE_ERROR_INVALID_PARAMETER;
+	if (pBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
 	out_pNtHeader = nullptr;
 	IMAGE_DOS_HEADER* pDosHeader = static_cast<IMAGE_DOS_HEADER*>(pBuffer);
 	if (pDosHeader->e_magic == IMAGE_DOS_SIGNATURE) {
-		if (pDosHeader->e_lfanew <= 0 || pDosHeader->e_lfanew + sizeof(IMAGE_NT_HEADERS) > 0x7FFFFFFF) return PE_ERROR_INVALID_FORMAT;
+		if (pDosHeader->e_lfanew <= 0 || pDosHeader->e_lfanew + sizeof(IMAGE_NT_HEADERS) > 0x7FFFFFFF) return PE_STATUS_INVALID_FORMAT;
 		out_pNtHeader =  reinterpret_cast<IMAGE_NT_HEADERS*>(static_cast<char*>(pBuffer) + pDosHeader->e_lfanew);
 		if (static_cast<IMAGE_NT_HEADERS*>(out_pNtHeader)->Signature == IMAGE_NT_SIGNATURE) {
-			return PE_ERROR_SUCCESS; 
+			return PE_STATUS_SUCCESS; 
 		}
 	}
-	return PE_ERROR_INVALID_FORMAT;
+	return PE_STATUS_INVALID_FORMAT;
 }
 
 /**
@@ -259,18 +265,18 @@ PE::STATUS PE::IsValid(void* pBuffer, IMAGE_NT_HEADERS*& out_pNtHeader) {
  * @param pFileBuffer     [in]  指向 PE 文件内存缓冲区的指针 (需先通过 IsValid 校验)
  * @param out_MachineType [out] 输出参数，返回机器类型常量 (WORD 类型)
  * @return PE::STATUS     获取结果状态码
- * @retval PE_ERROR_SUCCESS          获取成功
- * @retval PE_ERROR_INVALID_PARAMETER 输入缓冲区指针为空
- * @retval PE_ERROR_INVALID_FORMAT    文件格式无效，无法定位到 Machine 字段
+ * @retval PE_STATUS_SUCCESS          获取成功
+ * @retval PE_STATUS_INVALID_PARAMETER 输入缓冲区指针为空
+ * @retval PE_STATUS_INVALID_FORMAT    文件格式无效，无法定位到 Machine 字段
  */
 PE::STATUS PE::GetMachineType(void* pFileBuffer, WORD& out_MachineType) {
-	if (pFileBuffer == nullptr) return PE_ERROR_INVALID_PARAMETER;
+	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
-	if (IsValid(pFileBuffer, pNtHeader) == PE_ERROR_SUCCESS) {
+	if (IsValid(pFileBuffer, pNtHeader) == PE_STATUS_SUCCESS) {
 		out_MachineType = pNtHeader->FileHeader.Machine;
-		return PE_ERROR_SUCCESS;
+		return PE_STATUS_SUCCESS;
 	}
-	return PE_ERROR_INVALID_FORMAT;
+	return PE_STATUS_INVALID_FORMAT;
 }
 
 /**
@@ -289,18 +295,18 @@ PE::STATUS PE::GetMachineType(void* pFileBuffer, WORD& out_MachineType) {
  * @param pFileBuffer       [in]  指向 PE 文件内存缓冲区的指针
  * @param out_SubSystemInfo [out] 输出参数，返回子系统类型常量 (WORD 类型)
  * @return PE::STATUS       获取结果状态码
- * @retval PE_ERROR_SUCCESS          获取成功
- * @retval PE_ERROR_INVALID_PARAMETER 输入缓冲区指针为空
- * @retval PE_ERROR_INVALID_FORMAT    文件格式无效，无法定位到 Subsystem 字段
+ * @retval PE_STATUS_SUCCESS          获取成功
+ * @retval PE_STATUS_INVALID_PARAMETER 输入缓冲区指针为空
+ * @retval PE_STATUS_INVALID_FORMAT    文件格式无效，无法定位到 Subsystem 字段
  */
 PE::STATUS PE::GetSubSystem(void* pFileBuffer, WORD& out_SubSystemInfo) {
-	if (pFileBuffer == nullptr) return PE_ERROR_INVALID_PARAMETER;
+	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
-	if (IsValid(pFileBuffer, pNtHeader) == PE_ERROR_SUCCESS) {
+	if (IsValid(pFileBuffer, pNtHeader) == PE_STATUS_SUCCESS) {
 		out_SubSystemInfo = pNtHeader->OptionalHeader.Subsystem;
-		return PE_ERROR_SUCCESS;
+		return PE_STATUS_SUCCESS;
 	}
-	return PE_ERROR_INVALID_FORMAT;
+	return PE_STATUS_INVALID_FORMAT;
 }
 
 /**
@@ -318,18 +324,18 @@ PE::STATUS PE::GetSubSystem(void* pFileBuffer, WORD& out_SubSystemInfo) {
  * @param pFileBuffer     [in]  指向 PE 文件内存缓冲区的指针
  * @param out_OEP_Address [out] 输出参数，返回入口点的 RVA (DWORD 类型)
  * @return PE::STATUS     获取结果状态码
- * @retval PE_ERROR_SUCCESS          获取成功
- * @retval PE_ERROR_INVALID_PARAMETER 输入缓冲区指针为空
- * @retval PE_ERROR_INVALID_FORMAT    文件格式无效，无法定位到入口点字段
+ * @retval PE_STATUS_SUCCESS          获取成功
+ * @retval PE_STATUS_INVALID_PARAMETER 输入缓冲区指针为空
+ * @retval PE_STATUS_INVALID_FORMAT    文件格式无效，无法定位到入口点字段
  */
 PE::STATUS PE::GetEntryPoint(void* pFileBuffer, DWORD& out_OEP_Address) {
-	if (pFileBuffer == nullptr) return PE_ERROR_INVALID_PARAMETER;
+	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
-	if (IsValid(pFileBuffer, pNtHeader) == PE_ERROR_SUCCESS) {
+	if (IsValid(pFileBuffer, pNtHeader) == PE_STATUS_SUCCESS) {
 		out_OEP_Address = pNtHeader->OptionalHeader.AddressOfEntryPoint;
-		return PE_ERROR_SUCCESS;
+		return PE_STATUS_SUCCESS;
 	}
-	return PE_ERROR_INVALID_FORMAT;
+	return PE_STATUS_INVALID_FORMAT;
 }
 
 /**
@@ -349,18 +355,18 @@ PE::STATUS PE::GetEntryPoint(void* pFileBuffer, DWORD& out_OEP_Address) {
  * @param pFileBuffer [in]  指向 PE 文件内存缓冲区的指针
  * @param out_HDR     [out] 输出参数，返回 Magic 值 (WORD 类型)
  * @return PE::STATUS   获取结果状态码
- * @retval PE_ERROR_SUCCESS          获取成功
- * @retval PE_ERROR_INVALID_PARAMETER 输入缓冲区指针为空
- * @retval PE_ERROR_INVALID_FORMAT    文件格式无效，无法定位到 Magic 字段
+ * @retval PE_STATUS_SUCCESS          获取成功
+ * @retval PE_STATUS_INVALID_PARAMETER 输入缓冲区指针为空
+ * @retval PE_STATUS_INVALID_FORMAT    文件格式无效，无法定位到 Magic 字段
  */
 PE::STATUS PE::GetPeFormat(void* pFileBuffer, WORD& out_HDR) {
-	if (pFileBuffer == nullptr) return PE_ERROR_INVALID_PARAMETER;
+	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
-	if (IsValid(pFileBuffer, pNtHeader) == PE_ERROR_SUCCESS) {
+	if (IsValid(pFileBuffer, pNtHeader) == PE_STATUS_SUCCESS) {
 		out_HDR = pNtHeader->OptionalHeader.Magic;
-		return PE_ERROR_SUCCESS;
+		return PE_STATUS_SUCCESS;
 	}
-	return PE_ERROR_INVALID_FORMAT;
+	return PE_STATUS_INVALID_FORMAT;
 }
 
 /**
@@ -380,15 +386,15 @@ PE::STATUS PE::GetPeFormat(void* pFileBuffer, WORD& out_HDR) {
  * @param out_SectionName [out] 输出参数，指向包含所有节名的连续内存块
  * @param SectionNameSize [out] 输出参数，返回分配的总字节数 (NumberOfSections * 8)
  * @return PE::STATUS     获取结果状态码
- * @retval PE_ERROR_SUCCESS          获取成功
- * @retval PE_ERROR_INVALID_PARAMETER 输入缓冲区指针为空
- * @retval PE_ERROR_INVALID_FORMAT    文件格式无效，无法定位节表
+ * @retval PE_STATUS_SUCCESS          获取成功
+ * @retval PE_STATUS_INVALID_PARAMETER 输入缓冲区指针为空
+ * @retval PE_STATUS_INVALID_FORMAT    文件格式无效，无法定位节表
  */
 PE::STATUS PE::GetSectionName(void* pFileBuffer, void*& out_SectionName, size_t& SectionNameSize) {
-	if (pFileBuffer == nullptr) return PE_ERROR_INVALID_PARAMETER;
+	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
 	out_SectionName = nullptr;
-	if (IsValid(pFileBuffer, pNtHeader) == PE_ERROR_SUCCESS) {
+	if (IsValid(pFileBuffer, pNtHeader) == PE_STATUS_SUCCESS) {
 		out_SectionName = calloc(pNtHeader->FileHeader.NumberOfSections, sizeof(char[8]));
 		SectionNameSize = pNtHeader->FileHeader.NumberOfSections * sizeof(char[8]);
 		IMAGE_SECTION_HEADER* pSectionHeader = reinterpret_cast<IMAGE_SECTION_HEADER*>(
@@ -403,9 +409,9 @@ PE::STATUS PE::GetSectionName(void* pFileBuffer, void*& out_SectionName, size_t&
 			memcpy(WritePos, pSectionHeader->Name, sizeof(char[8]));
 			pSectionHeader++;
 		}
-		if (SectionIndex == pNtHeader->FileHeader.NumberOfSections) return PE_ERROR_SUCCESS;
+		if (SectionIndex == pNtHeader->FileHeader.NumberOfSections) return PE_STATUS_SUCCESS;
 	}
-	return PE_ERROR_INVALID_FORMAT;
+	return PE_STATUS_INVALID_FORMAT;
 }
 
 /**
@@ -430,15 +436,15 @@ PE::STATUS PE::GetSectionName(void* pFileBuffer, void*& out_SectionName, size_t&
  * @param out_Checksum  [out] 输出根据当前文件内容重新计算得到的校验和值
  * @param out_IsPass    [out] 输出校验结果 (true 表示文件完整未被篡改，false 表示不匹配)
  * @return PE::STATUS   验证结果状态码
- * @retval PE_ERROR_SUCCESS          文件是有效的 PE，且完成了校验计算
- * @retval PE_ERROR_INVALID_PARAMETER 输入缓冲区指针为空
- * @retval PE_ERROR_INVALID_FORMAT    文件格式无效，无法定位校验和字段
+ * @retval PE_STATUS_SUCCESS          文件是有效的 PE，且完成了校验计算
+ * @retval PE_STATUS_INVALID_PARAMETER 输入缓冲区指针为空
+ * @retval PE_STATUS_INVALID_FORMAT    文件格式无效，无法定位校验和字段
  */
 PE::STATUS PE::GetPEChecksum(void* pFileBuffer, DWORD FileSize, DWORD& file_Checksum, DWORD& out_Checksum, bool& out_IsPass) {
-	if (pFileBuffer == nullptr) return PE_ERROR_INVALID_PARAMETER;
+	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
 	STATUS RTN = IsValid(pFileBuffer, pNtHeader);
-	if (RTN == PE_ERROR_SUCCESS) {
+	if (RTN == PE_STATUS_SUCCESS) {
 		file_Checksum = pNtHeader->OptionalHeader.CheckSum;
 		pNtHeader->OptionalHeader.CheckSum = 0;
 		DWORD tmp_FileSize = FileSize + (FileSize % 2);
@@ -476,21 +482,21 @@ PE::STATUS PE::GetPEChecksum(void* pFileBuffer, DWORD FileSize, DWORD& file_Chec
  *                          其他模式下可传 nullptr。
  * @param DumpFile    [in]  输出文件的目标路径 (宽字符字符串)
  * @return PE::STATUS 操作结果状态码
- * @retval PE_ERROR_SUCCESS              转储成功
- * @retval PE_ERROR_INVALID_PARAMETER    参数无效 (如指定 SectionInfo 但未提供节名)
- * @retval PE_ERROR_FILE_OPEN_FAILURE    无法创建或写入目标文件
- * @retval PE_ERROR_LOCAL_MEMORY_WRITE_FAILURE 写入过程中发生错误 (字节数不匹配)
- * @retval PE_ERROR_INVALID_FORMAT       源文件不是有效的 PE 格式
+ * @retval PE_STATUS_SUCCESS              转储成功
+ * @retval PE_STATUS_INVALID_PARAMETER    参数无效 (如指定 SectionInfo 但未提供节名)
+ * @retval PE_STATUS_FILE_OPEN_FAILURE    无法创建或写入目标文件
+ * @retval PE_STATUS_LOCAL_MEMORY_WRITE_FAILURE 写入过程中发生错误 (字节数不匹配)
+ * @retval PE_STATUS_INVALID_FORMAT       源文件不是有效的 PE 格式
  */
 PE::STATUS PE::FileSectionDump(void* pFileBuffer, DumpStruct Signature, char* SectionName, const wchar_t* DumpFile) {
-	if (pFileBuffer == nullptr) return PE_ERROR_INVALID_PARAMETER;
-	if (DumpFile == nullptr) return PE_ERROR_INVALID_PARAMETER;
+	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
+	if (DumpFile == nullptr) return PE_STATUS_INVALID_PARAMETER;
 
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
-	if (IsValid(pFileBuffer, pNtHeader) == PE_ERROR_SUCCESS) {
+	if (IsValid(pFileBuffer, pNtHeader) == PE_STATUS_SUCCESS) {
 		// 创建输出文件
 		HANDLE hFile = CreateFileW(DumpFile, GENERIC_WRITE, NULL, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-		if (hFile == INVALID_HANDLE_VALUE) return PE_ERROR_FILE_OPEN_FAILURE;
+		if (hFile == INVALID_HANDLE_VALUE) return PE_STATUS_FILE_OPEN_FAILURE;
 
 		bool RTN = false;
 		void* WritePos = nullptr; // 数据源指针
@@ -530,7 +536,7 @@ PE::STATUS PE::FileSectionDump(void* pFileBuffer, DumpStruct Signature, char* Se
 			// 转储特定节区的**原始数据** (Raw Data)
 			if (SectionName == nullptr) {
 				CloseHandle(hFile);
-				return PE_ERROR_INVALID_PARAMETER;
+				return PE_STATUS_INVALID_PARAMETER;
 			}
 			{
 				// 定位到节表起始位置
@@ -557,7 +563,7 @@ PE::STATUS PE::FileSectionDump(void* pFileBuffer, DumpStruct Signature, char* Se
 
 		default:
 			CloseHandle(hFile);
-			return PE_ERROR_INVALID_PARAMETER;
+			return PE_STATUS_INVALID_PARAMETER;
 		}
 
 		// 执行写入
@@ -568,9 +574,9 @@ PE::STATUS PE::FileSectionDump(void* pFileBuffer, DumpStruct Signature, char* Se
 		CloseHandle(hFile);
 
 		// 检查是否写入成功且字节数匹配
-		if (RTN && DumpSize == WriteBytes) return PE_ERROR_LOCAL_MEMORY_WRITE_FAILURE;
+		if (RTN && DumpSize == WriteBytes) return PE_STATUS_LOCAL_MEMORY_WRITE_FAILURE;
 	}
-	return PE_ERROR_INVALID_FORMAT;
+	return PE_STATUS_INVALID_FORMAT;
 }
 
 /**
@@ -594,13 +600,13 @@ PE::STATUS PE::FileSectionDump(void* pFileBuffer, DumpStruct Signature, char* Se
  * @param ExecuteFile [in] 要运行并转储的可执行文件路径 (宽字符字符串)
  * @param DumpFile    [in] 内存镜像保存的目标文件路径 (宽字符字符串)
  * @return PE::STATUS 操作结果状态码
- * @retval PE_ERROR_SUCCESS                 转储成功
- * @retval PE_ERROR_FILE_OPEN_FAILURE        无法创建目标进程或无法创建输出文件
- * @retval PE_ERROR_PROCESS_OPEN_FAILURE     无法打开进程句柄 (权限不足)
- * @retval PE_ERROR_GET_MODULE_BASE_FAILURE  无法获取模块信息 (GetModuleInformation 失败)
- * @retval PE_ERROR_REMOTE_MEMORY_READ_FAILURE 读取远程进程内存失败 (可能被反作弊保护)
- * @retval PE_ERROR_LOCAL_MEMORY_ALLOCATION_FAILURE 本地内存分配失败
- * @retval PE_ERROR_FILE_WRITE_FAILURE       写入磁盘文件失败 (字节数不匹配)
+ * @retval PE_STATUS_SUCCESS                 转储成功
+ * @retval PE_STATUS_FILE_OPEN_FAILURE        无法创建目标进程或无法创建输出文件
+ * @retval PE_STATUS_PROCESS_OPEN_FAILURE     无法打开进程句柄 (权限不足)
+ * @retval PE_STATUS_GET_MODULE_BASE_FAILURE  无法获取模块信息 (GetModuleInformation 失败)
+ * @retval PE_STATUS_REMOTE_MEMORY_READ_FAILURE 读取远程进程内存失败 (可能被反作弊保护)
+ * @retval PE_STATUS_LOCAL_MEMORY_ALLOCATION_FAILURE 本地内存分配失败
+ * @retval PE_STATUS_FILE_WRITE_FAILURE       写入磁盘文件失败 (字节数不匹配)
  */
 PE::STATUS PE::MemoryDump(const wchar_t* ExecuteFile, const wchar_t* DumpFile) {
 	STARTUPINFOW si = { 0 };
@@ -610,7 +616,7 @@ PE::STATUS PE::MemoryDump(const wchar_t* ExecuteFile, const wchar_t* DumpFile) {
 	MODULEINFO ModInfo = { 0 };
 	SIZE_T ReadBytes = 0;
 	void* pMemoryImage = nullptr;
-	STATUS RTN = PE_ERROR_SUCCESS;
+	STATUS RTN = PE_STATUS_SUCCESS;
 
 	// 构建命令行缓冲区
 	wchar_t szCommandLine[MAX_PATH * 2] = { 0 };
@@ -640,12 +646,12 @@ PE::STATUS PE::MemoryDump(const wchar_t* ExecuteFile, const wchar_t* DumpFile) {
 							// 如果读取失败
 							VirtualFree(pMemoryImage, 0, MEM_RELEASE);
 							pMemoryImage = nullptr;
-							RTN = PE_ERROR_REMOTE_MEMORY_READ_FAILURE;
+							RTN = PE_STATUS_REMOTE_MEMORY_READ_FAILURE;
 						}
-					}else RTN = PE_ERROR_LOCAL_MEMORY_ALLOCATION_FAILURE;
-				}else RTN = PE_ERROR_GET_MODULE_BASE_FAILURE;
-			}else RTN = PE_ERROR_MODULE_NOT_FOUND;
-		}else RTN = PE_ERROR_PROCESS_OPEN_FAILURE;
+					}else RTN = PE_STATUS_LOCAL_MEMORY_ALLOCATION_FAILURE;
+				}else RTN = PE_STATUS_GET_MODULE_BASE_FAILURE;
+			}else RTN = PE_STATUS_MODULE_NOT_FOUND;
+		}else RTN = PE_STATUS_PROCESS_OPEN_FAILURE;
 
 		// 6. 清理：终止进程并关闭句柄
 		// 注意：这里直接 TerminateProcess 是非常暴力的，可能导致文件占用或资源泄露，但在 Dump 工具中常见
@@ -653,10 +659,10 @@ PE::STATUS PE::MemoryDump(const wchar_t* ExecuteFile, const wchar_t* DumpFile) {
 		TerminateProcess(pi.hProcess, 0);
 		CloseHandle(pi.hThread);
 		CloseHandle(pi.hProcess);
-	}else RTN = PE_ERROR_FILE_OPEN_FAILURE;
+	}else RTN = PE_STATUS_FILE_OPEN_FAILURE;
 
 	// 如果前面任何步骤失败，直接返回错误码
-	if (RTN != PE_ERROR_SUCCESS) return RTN;
+	if (RTN != PE_STATUS_SUCCESS) return RTN;
 
 	// 7. 将内存镜像写入文件
 	DWORD WriteBytes = 0;
@@ -672,7 +678,7 @@ PE::STATUS PE::MemoryDump(const wchar_t* ExecuteFile, const wchar_t* DumpFile) {
 	VirtualFree(pMemoryImage, 0, MEM_RELEASE);
 
 	// 检查 WriteBytes 是否等于 SizeOfImage
-	RTN = (WriteBytes == ModInfo.SizeOfImage) ? PE_ERROR_SUCCESS : PE_ERROR_FILE_WRITE_FAILURE;
+	RTN = (WriteBytes == ModInfo.SizeOfImage) ? PE_STATUS_SUCCESS : PE_STATUS_FILE_WRITE_FAILURE;
 	return RTN;
 }
 
@@ -698,7 +704,7 @@ DWORD PE::RvaToFoa(void* pBuffer, DWORD RVA) {
 
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
 	// 1. 验证 PE 有效性并获取 NT 头指针
-	if (IsValid(pBuffer, pNtHeader) == PE_ERROR_SUCCESS) {
+	if (IsValid(pBuffer, pNtHeader) == PE_STATUS_SUCCESS) {
 		// 2. 边界检查：如果 RVA 超过映像大小，无效
 		if (RVA > pNtHeader->OptionalHeader.SizeOfImage) return -1;
 
@@ -813,22 +819,22 @@ DWORD PE::FoaToRva(void* pBuffer, DWORD FileSize, DWORD FOA) {
  * @param pFileBuffer  [in]  指向磁盘上原始 PE 文件数据的指针
  * @param pMemoryImage [out] 指向新分配的、已重组的内存镜像基址 (调用者需负责 VirtualFree)
  * @return PE::STATUS  操作结果状态码
- * @retval PE_ERROR_SUCCESS                 构建成功
- * @retval PE_ERROR_INVALID_PARAMETER       输入缓冲区指针为空
- * @retval PE_ERROR_LOCAL_MEMORY_ALLOCATION_FAILURE 内存分配失败
- * @retval PE_ERROR_INVALID_FORMAT          文件格式无效
+ * @retval PE_STATUS_SUCCESS                 构建成功
+ * @retval PE_STATUS_INVALID_PARAMETER       输入缓冲区指针为空
+ * @retval PE_STATUS_LOCAL_MEMORY_ALLOCATION_FAILURE 内存分配失败
+ * @retval PE_STATUS_INVALID_FORMAT          文件格式无效
  */
 PE::STATUS PE::BuildMemoryImage(void* pFileBuffer, void*& pMemoryImage) {
-	if (pFileBuffer == nullptr) return PE_ERROR_INVALID_PARAMETER;
+	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
 
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
 	// 验证文件头有效性并获取 NT 头指针
-	if (IsValid(pFileBuffer, pNtHeader) == PE_ERROR_SUCCESS) {
+	if (IsValid(pFileBuffer, pNtHeader) == PE_STATUS_SUCCESS) {
 		void* Base = nullptr;
 		// 1. 分配内存：大小为 OptionalHeader 中定义的 SizeOfImage (内存对齐后的总大小)
 		// 权限设为 PAGE_READWRITE 以便后续写入数据和修复重定位/导入表
 		Base = VirtualAlloc(NULL, pNtHeader->OptionalHeader.SizeOfImage, MEM_COMMIT, PAGE_READWRITE);
-		if (Base == nullptr) return PE_ERROR_LOCAL_MEMORY_ALLOCATION_FAILURE;
+		if (Base == nullptr) return PE_STATUS_LOCAL_MEMORY_ALLOCATION_FAILURE;
 
 		// 2. 复制 PE 头 (DOS 头 + NT 头 + 节表)
 		// 复制大小为 SizeOfHeaders，这通常包含了所有头部信息和节表
@@ -864,9 +870,9 @@ PE::STATUS PE::BuildMemoryImage(void* pFileBuffer, void*& pMemoryImage) {
 		}
 
 		pMemoryImage = Base;
-		return PE_ERROR_SUCCESS;
+		return PE_STATUS_SUCCESS;
 	}
-	return PE_ERROR_INVALID_FORMAT;
+	return PE_STATUS_INVALID_FORMAT;
 }
 
 /**
@@ -889,24 +895,24 @@ PE::STATUS PE::BuildMemoryImage(void* pFileBuffer, void*& pMemoryImage) {
  * @param pFileBuffer  [in]  PE 文件内存缓冲区
  * @param out_pExpInfo [out] 输出参数，指向解析后的导出信息结构
  * @return PE::STATUS  操作结果状态码
- * @retval PE_ERROR_SUCCESS							解析成功
- * @retval PE_ERROR_INVALID_PARAMETER				输入缓冲区为空
- * @retval PE_ERROR_ARCH_MISMATCH					文件架构与编译环境不匹配 (32/64位)
- * @retval PE_ERROR_GET_EXPORT_FAILURE				文件无导出表或解析过程中断
- * @retval PE_ERROR_LOCAL_MEMORY_ALLOCATION_FAILURE 内存分配失败
- * @retval PE_ERROR_GET_FOA_FAILURE					RVA 转 FOA 失败
+ * @retval PE_STATUS_SUCCESS							解析成功
+ * @retval PE_STATUS_INVALID_PARAMETER				输入缓冲区为空
+ * @retval PE_STATUS_ARCH_MISMATCH					文件架构与编译环境不匹配 (32/64位)
+ * @retval PE_STATUS_GET_EXPORT_FAILURE				文件无导出表或解析过程中断
+ * @retval PE_STATUS_LOCAL_MEMORY_ALLOCATION_FAILURE 内存分配失败
+ * @retval PE_STATUS_GET_FOA_FAILURE					RVA 转 FOA 失败
  */
 PE::STATUS PE::GetExportTable(void* pFileBuffer, ExportInfo*& out_pExpInfo) {
-	if (pFileBuffer == nullptr) return PE_ERROR_INVALID_PARAMETER;
+	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
 
 	// 1. 验证 PE 有效性
-	if (IsValid(pFileBuffer, pNtHeader) == PE_ERROR_SUCCESS) {
+	if (IsValid(pFileBuffer, pNtHeader) == PE_STATUS_SUCCESS) {
 		// 额外验证 Optional Header 的 Magic 字段，确保是 PE32 或 PE32+ 格式
 		#if defined(_WIN64)
-			if (pNtHeader->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC) return PE_ERROR_ARCH_MISMATCH;
+			if (pNtHeader->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC) return PE_STATUS_ARCH_MISMATCH;
 		#else
-			if (pNtHeader->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC) return PE_ERROR_ARCH_MISMATCH;
+			if (pNtHeader->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC) return PE_STATUS_ARCH_MISMATCH;
 		#endif
 
 		// 2. 获取导出表的数据目录项 (Data Directory Entry for Export)
@@ -914,13 +920,13 @@ PE::STATUS PE::GetExportTable(void* pFileBuffer, ExportInfo*& out_pExpInfo) {
 
 		// 3. 分配主结构体内存
 		out_pExpInfo = static_cast<ExportInfo*>(calloc(1, sizeof(ExportInfo)));
-		if (out_pExpInfo == nullptr) return PE_ERROR_LOCAL_MEMORY_ALLOCATION_FAILURE;
+		if (out_pExpInfo == nullptr) return PE_STATUS_LOCAL_MEMORY_ALLOCATION_FAILURE;
 
 		// 4. 检查是否存在导出表
 		if (DataDir.VirtualAddress == 0 || DataDir.Size == 0) {
 			free(out_pExpInfo);
 			out_pExpInfo = nullptr;
-			return PE_ERROR_GET_EXPORT_FAILURE;
+			return PE_STATUS_GET_EXPORT_FAILURE;
 		}
 
 		// 5. 将导出目录的 RVA 转换为文件偏移 (FOA)
@@ -929,7 +935,7 @@ PE::STATUS PE::GetExportTable(void* pFileBuffer, ExportInfo*& out_pExpInfo) {
 		if (FileOffset == DWORD(-1)) {
 			free(out_pExpInfo);
 			out_pExpInfo = nullptr;
-			return PE_ERROR_LOCAL_MEMORY_ALLOCATION_FAILURE;
+			return PE_STATUS_LOCAL_MEMORY_ALLOCATION_FAILURE;
 		}
 
 		// 6. 定位到 IMAGE_EXPORT_DIRECTORY 结构
@@ -942,7 +948,7 @@ PE::STATUS PE::GetExportTable(void* pFileBuffer, ExportInfo*& out_pExpInfo) {
 		if (FileOffset == DWORD(-1)) {
 			free(out_pExpInfo);
 			out_pExpInfo = nullptr;
-			return PE_ERROR_GET_FOA_FAILURE;
+			return PE_STATUS_GET_FOA_FAILURE;
 		}
 		char* FileName = static_cast<char*>(pFileBuffer) + FileOffset;
 
@@ -956,7 +962,7 @@ PE::STATUS PE::GetExportTable(void* pFileBuffer, ExportInfo*& out_pExpInfo) {
 		if (pFunctionsInfo == nullptr) {
 			free(out_pExpInfo);
 			out_pExpInfo = nullptr;
-			return PE_ERROR_LOCAL_MEMORY_ALLOCATION_FAILURE;
+			return PE_STATUS_LOCAL_MEMORY_ALLOCATION_FAILURE;
 		}
 		int RealFunctions = 0;	// 实际解析到的有名函数数量
 		DWORD FuncIndex = 0;
@@ -969,7 +975,7 @@ PE::STATUS PE::GetExportTable(void* pFileBuffer, ExportInfo*& out_pExpInfo) {
 			free(out_pExpInfo->Fn);
 			free(out_pExpInfo);
 			out_pExpInfo = nullptr;
-			return PE_ERROR_GET_FOA_FAILURE;
+			return PE_STATUS_GET_FOA_FAILURE;
 		}
 		DWORD* pFuncAddr = reinterpret_cast<DWORD*>(
 			static_cast<char*>(pFileBuffer) + FileOffset
@@ -980,7 +986,7 @@ PE::STATUS PE::GetExportTable(void* pFileBuffer, ExportInfo*& out_pExpInfo) {
 			free(out_pExpInfo->Fn);
 			free(out_pExpInfo);
 			out_pExpInfo = nullptr;
-			return PE_ERROR_GET_FOA_FAILURE;
+			return PE_STATUS_GET_FOA_FAILURE;
 		}
 		WORD* pFuncOrdinals = reinterpret_cast<WORD*>(
 			static_cast<char*>(pFileBuffer) + FileOffset
@@ -991,7 +997,7 @@ PE::STATUS PE::GetExportTable(void* pFileBuffer, ExportInfo*& out_pExpInfo) {
 			free(out_pExpInfo->Fn);
 			free(out_pExpInfo);
 			out_pExpInfo = nullptr;
-			return PE_ERROR_GET_FOA_FAILURE;
+			return PE_STATUS_GET_FOA_FAILURE;
 		}
 		DWORD* FuncNameOffset = reinterpret_cast<DWORD*>(
 			static_cast<char*>(pFileBuffer) + FileOffset
@@ -1023,7 +1029,7 @@ PE::STATUS PE::GetExportTable(void* pFileBuffer, ExportInfo*& out_pExpInfo) {
 				if (tmp_Pointer == nullptr) {
 					free(out_pExpInfo);
 					out_pExpInfo = nullptr;
-					return PE_ERROR_LOCAL_MEMORY_ALLOCATION_FAILURE;
+					return PE_STATUS_LOCAL_MEMORY_ALLOCATION_FAILURE;
 				}
 				pFunctionsInfo = static_cast<FuncInfo*>(tmp_Pointer);
 			}
@@ -1045,7 +1051,7 @@ PE::STATUS PE::GetExportTable(void* pFileBuffer, ExportInfo*& out_pExpInfo) {
 						free(out_pExpInfo->Fn);
 						free(out_pExpInfo);
 						out_pExpInfo = nullptr;
-						return PE_ERROR_GET_FOA_FAILURE;
+						return PE_STATUS_GET_FOA_FAILURE;
 					}
 					// 直接指向缓冲区内的函数名称字符串，无需复制 (节省内存，但依赖 pFileBuffer 生命周期)
 					pCurrentFunctionsInfo->Name = static_cast<char*>(static_cast<char*>(pFileBuffer) + FileOffset);
@@ -1058,10 +1064,10 @@ PE::STATUS PE::GetExportTable(void* pFileBuffer, ExportInfo*& out_pExpInfo) {
 		out_pExpInfo->Fn = pFunctionsInfo;
 		out_pExpInfo->FuncCount = RealFunctions;
 		out_pExpInfo->ExportFuncSize = sizeof(FuncInfo) * RealFunctions;
-		STATUS RTN = (pExportDir->NumberOfFunctions == FuncIndex) ? PE_ERROR_SUCCESS : PE_ERROR_GET_EXPORT_FAILURE;
+		STATUS RTN = (pExportDir->NumberOfFunctions == FuncIndex) ? PE_STATUS_SUCCESS : PE_STATUS_GET_EXPORT_FAILURE;
 		return RTN;
 	}
-	return PE_ERROR_INVALID_FORMAT;
+	return PE_STATUS_INVALID_FORMAT;
 }
 
 /**
@@ -1075,21 +1081,21 @@ PE::STATUS PE::GetExportTable(void* pFileBuffer, ExportInfo*& out_pExpInfo) {
  * @return STATUS 成功返回 true，失败返回 false
  */
 PE::STATUS PE::FixImportTable(DWORD pid, void* pMemoryImage /*, void* pRemoteImageBase*/) {
-	if (pid == 0) return PE_ERROR_INVALID_PARAMETER;
-	if (pMemoryImage == nullptr) return PE_ERROR_INVALID_FORMAT;
+	if (pid == 0) return PE_STATUS_INVALID_PARAMETER;
+	if (pMemoryImage == nullptr) return PE_STATUS_INVALID_FORMAT;
 	//if (pRemoteImageBase == nullptr) return false;
 
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
 	if (IsValid(pMemoryImage, pNtHeader)) {
 		// 额外验证 Optional Header 的 Magic 字段，确保是 PE32 或 PE32+ 格式
 		#if defined(_WIN64)
-			if (pNtHeader->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC) return PE_ERROR_ARCH_MISMATCH;
+			if (pNtHeader->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC) return PE_STATUS_ARCH_MISMATCH;
 		#else
-			if (pNtHeader->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC) return PE_ERROR_ARCH_MISMATCH;
+			if (pNtHeader->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC) return PE_STATUS_ARCH_MISMATCH;
 		#endif
 		// 获取导入表目录项
 		IMAGE_DATA_DIRECTORY DataDir = pNtHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
-		if (DataDir.VirtualAddress == 0 || DataDir.Size == 0) return PE_ERROR_SUCCESS; // 无导入表，视为成功
+		if (DataDir.VirtualAddress == 0 || DataDir.Size == 0) return PE_STATUS_SUCCESS; // 无导入表，视为成功
 
 		// 定位到导入描述符数组
 		IMAGE_IMPORT_DESCRIPTOR* pImportDest = reinterpret_cast<IMAGE_IMPORT_DESCRIPTOR*>(
@@ -1115,7 +1121,7 @@ PE::STATUS PE::FixImportTable(DWORD pid, void* pMemoryImage /*, void* pRemoteIma
 
 			// 1. 在本地进程加载该 DLL，以便获取函数地址
 			HMODULE local_hModule = LoadLibraryA(pDllName);
-			if (local_hModule == nullptr) return PE_ERROR_LOAD_MODULE_FAILURE;
+			if (local_hModule == nullptr) return PE_STATUS_LOAD_MODULE_FAILURE;
 
 			// 转换 DLL 名为宽字符，用于查询远程进程中的模块基址
 			WCHAR wDllName[MAX_PATH] = { 0 };
@@ -1126,7 +1132,7 @@ PE::STATUS PE::FixImportTable(DWORD pid, void* pMemoryImage /*, void* pRemoteIma
 			HMODULE remote_hModule = (HMODULE)GetModuleBaseAddress(pid, wDllName);
 			if (remote_hModule == nullptr) {
 				FreeLibrary(local_hModule);
-				return PE_ERROR_GET_MODULE_BASE_FAILURE;
+				return PE_STATUS_GET_MODULE_BASE_FAILURE;
 			}
 
 			// 遍历该 DLL 导入的所有函数
@@ -1151,7 +1157,7 @@ PE::STATUS PE::FixImportTable(DWORD pid, void* pMemoryImage /*, void* pRemoteIma
 				MODULEINFO ModuleInfo = { 0 };
 				if (!GetModuleInformation(GetCurrentProcess(), local_hModule, &ModuleInfo, sizeof(MODULEINFO))) {
 					FreeLibrary(local_hModule);
-					return PE_ERROR_MODULE_NOT_FOUND;
+					return PE_STATUS_MODULE_NOT_FOUND;
 				}
 
 				ULONG_PTR ModuleStart = (ULONG_PTR)local_hModule;
@@ -1161,7 +1167,7 @@ PE::STATUS PE::FixImportTable(DWORD pid, void* pMemoryImage /*, void* pRemoteIma
 				// 如果函数地址不在模块范围内，说明出错
 				if (ModuleFnAddr <= ModuleStart || ModuleFnAddr >= ModuleEnd) {
 					FreeLibrary(local_hModule);
-					return PE_ERROR_MODULE_RANGE_NOT_IN;
+					return PE_STATUS_MODULE_RANGE_NOT_IN;
 				}
 
 				// 3. 计算函数相对于模块基址的偏移 (RVA)
@@ -1181,9 +1187,9 @@ PE::STATUS PE::FixImportTable(DWORD pid, void* pMemoryImage /*, void* pRemoteIma
 			FreeLibrary(local_hModule);
 			pImportDest++;
 		}
-		return PE_ERROR_SUCCESS;
+		return PE_STATUS_SUCCESS;
 	}
-	return PE_ERROR_INVALID_FORMAT;
+	return PE_STATUS_INVALID_FORMAT;
 }
 
 /**
@@ -1206,33 +1212,33 @@ PE::STATUS PE::FixImportTable(DWORD pid, void* pMemoryImage /*, void* pRemoteIma
  * @param pid             [in] 目标远程进程的 ID
  * @param pMemoryImage    [in] 本地已构建好的 PE 内存镜像 (包含待修复的 IAT)
  * @return PE::STATUS     操作结果状态码
- * @retval PE_ERROR_SUCCESS                 修复成功
- * @retval PE_ERROR_INVALID_PARAMETER       进程 ID 无效
- * @retval PE_ERROR_INVALID_FORMAT          镜像无效或架构不匹配
- * @retval PE_ERROR_LOAD_MODULE_FAILURE     无法在本地加载依赖 DLL
- * @retval PE_ERROR_GET_MODULE_BASE_FAILURE 无法获取远程进程中 DLL 的基址
- * @retval PE_ERROR_MODULE_NOT_FOUND        无法获取本地模块信息 (用于校验)
- * @retval PE_ERROR_MODULE_RANGE_NOT_IN     获取到的函数地址不在模块范围内 (异常)
+ * @retval PE_STATUS_SUCCESS                 修复成功
+ * @retval PE_STATUS_INVALID_PARAMETER       进程 ID 无效
+ * @retval PE_STATUS_INVALID_FORMAT          镜像无效或架构不匹配
+ * @retval PE_STATUS_LOAD_MODULE_FAILURE     无法在本地加载依赖 DLL
+ * @retval PE_STATUS_GET_MODULE_BASE_FAILURE 无法获取远程进程中 DLL 的基址
+ * @retval PE_STATUS_MODULE_NOT_FOUND        无法获取本地模块信息 (用于校验)
+ * @retval PE_STATUS_MODULE_RANGE_NOT_IN     获取到的函数地址不在模块范围内 (异常)
  */
 PE::STATUS PE::Relocation(void* pMemoryImage, void* pRemoteImage) {
-	if (pMemoryImage == nullptr) return PE_ERROR_INVALID_PARAMETER;
-	if (pRemoteImage == nullptr) return PE_ERROR_INVALID_PARAMETER;
+	if (pMemoryImage == nullptr) return PE_STATUS_INVALID_PARAMETER;
+	if (pRemoteImage == nullptr) return PE_STATUS_INVALID_PARAMETER;
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
 
 	// 1. 验证 PE 有效性
 	if (IsValid(pMemoryImage, pNtHeader)) {
 		// 额外验证 Optional Header 的 Magic 字段，确保是 PE32 或 PE32+ 格式
 		#if defined(_WIN64)
-			if (pNtHeader->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC) return PE_ERROR_ARCH_MISMATCH;
+			if (pNtHeader->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC) return PE_STATUS_ARCH_MISMATCH;
 		#else
-			if (pNtHeader->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC) return PE_ERROR_ARCH_MISMATCH;
+			if (pNtHeader->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC) return PE_STATUS_ARCH_MISMATCH;
 		#endif
 
 		// 2. 获取重定位表 (Base Relocation Table) 的数据目录
 		IMAGE_DATA_DIRECTORY DataDir = pNtHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
 		
 		// 如果没有重定位表或大小为0，说明不需要重定位 (或者是一个无法重定位的驱动/EXE)，直接返回成功
-		if (DataDir.VirtualAddress == 0 || DataDir.Size == 0) return PE_ERROR_SUCCESS;
+		if (DataDir.VirtualAddress == 0 || DataDir.Size == 0) return PE_STATUS_SUCCESS;
 
 		// 3. 定位重定位表起始位置
 		IMAGE_BASE_RELOCATION* pBaseReloc = reinterpret_cast<IMAGE_BASE_RELOCATION*>(
@@ -1243,7 +1249,7 @@ PE::STATUS PE::Relocation(void* pMemoryImage, void* pRemoteImage) {
 		ULONG_PTR Delta = (ULONG_PTR)pRemoteImage - (ULONG_PTR)pMemoryImage;
 
 		// 如果差值为 0，说明加载地址与预期一致，无需重定位
-		if (Delta == 0) return PE_ERROR_SUCCESS;
+		if (Delta == 0) return PE_STATUS_SUCCESS;
 
 		// 5. 遍历重定位块 (Block)
 		// 重定位表由多个 IMAGE_BASE_RELOCATION 块组成，以 VirtualAddress 为 0 结束
@@ -1275,9 +1281,9 @@ PE::STATUS PE::Relocation(void* pMemoryImage, void* pRemoteImage) {
 				(char*)pBaseReloc + pBaseReloc->SizeOfBlock
 			);
 		}
-		return PE_ERROR_SUCCESS;
+		return PE_STATUS_SUCCESS;
 	}
-	return PE_ERROR_INVALID_FORMAT;
+	return PE_STATUS_INVALID_FORMAT;
 }
 
 /**
@@ -1300,16 +1306,16 @@ PE::STATUS PE::Relocation(void* pMemoryImage, void* pRemoteImage) {
  * @param pFileBuffer  [in] PE 文件缓冲区 (用于读取节表信息)
  * @param pMemoryImage [in] 已加载到内存的 PE 图像 (用于修改属性)
  * @return PE::STATUS  操作结果状态码
- * @retval PE_ERROR_SUCCESS          设置成功
- * @retval PE_ERROR_INVALID_PARAMETER 输入缓冲区指针为空
- * @retval PE_ERROR_INVALID_FORMAT   文件格式无效
+ * @retval PE_STATUS_SUCCESS          设置成功
+ * @retval PE_STATUS_INVALID_PARAMETER 输入缓冲区指针为空
+ * @retval PE_STATUS_INVALID_FORMAT   文件格式无效
  */
 PE::STATUS PE::SetSectionProperty(void* pFileBuffer, void* pMemoryImage) {
-	if (pFileBuffer == nullptr) return PE_ERROR_INVALID_PARAMETER;
-	if (pMemoryImage == nullptr) return PE_ERROR_INVALID_PARAMETER;
+	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
+	if (pMemoryImage == nullptr) return PE_STATUS_INVALID_PARAMETER;
 
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
-	if (IsValid(pFileBuffer, pNtHeader) == PE_ERROR_SUCCESS) {
+	if (IsValid(pFileBuffer, pNtHeader) == PE_STATUS_SUCCESS) {
 		// 获取第一个节表项的指针 (使用 SDK 宏更安全)
 		IMAGE_SECTION_HEADER* pSectionHeader = IMAGE_FIRST_SECTION(pNtHeader);
 
@@ -1344,9 +1350,9 @@ PE::STATUS PE::SetSectionProperty(void* pFileBuffer, void* pMemoryImage) {
 
 			pSectionHeader++; // 移动到下一个节表项
 		}
-		return PE_ERROR_SUCCESS;
+		return PE_STATUS_SUCCESS;
 	}
-	return PE_ERROR_INVALID_PARAMETER;
+	return PE_STATUS_INVALID_PARAMETER;
 }
 
 /**
@@ -1367,17 +1373,17 @@ PE::STATUS PE::SetSectionProperty(void* pFileBuffer, void* pMemoryImage) {
  * @param pFileBuffer  [in] PE 文件缓冲区 (用于读取节表信息)
  * @param pMemoryImage [in] 远程进程中已加载的 PE 图像基址
  * @return PE::STATUS  操作结果状态码
- * @retval PE_ERROR_SUCCESS          设置成功
- * @retval PE_ERROR_INVALID_PARAMETER 句柄或指针无效
- * @retval PE_ERROR_INVALID_FORMAT   文件格式无效
+ * @retval PE_STATUS_SUCCESS          设置成功
+ * @retval PE_STATUS_INVALID_PARAMETER 句柄或指针无效
+ * @retval PE_STATUS_INVALID_FORMAT   文件格式无效
  */
 PE::STATUS PE::SetSectionProperty(HANDLE hProcess, void* pFileBuffer, void* pMemoryImage) {
-	if (pFileBuffer == nullptr) return PE_ERROR_INVALID_PARAMETER;
-	if (pMemoryImage == nullptr) return PE_ERROR_INVALID_PARAMETER;
-	if (hProcess == NULL || hProcess == INVALID_HANDLE_VALUE) return PE_ERROR_INVALID_PARAMETER;
+	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
+	if (pMemoryImage == nullptr) return PE_STATUS_INVALID_PARAMETER;
+	if (hProcess == NULL || hProcess == INVALID_HANDLE_VALUE) return PE_STATUS_INVALID_PARAMETER;
 
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
-	if (IsValid(pFileBuffer, pNtHeader) == PE_ERROR_SUCCESS) {
+	if (IsValid(pFileBuffer, pNtHeader) == PE_STATUS_SUCCESS) {
 		IMAGE_SECTION_HEADER* pSectionHeader = IMAGE_FIRST_SECTION(pNtHeader);
 
 		for (int SectionIndex = 0; SectionIndex < pNtHeader->FileHeader.NumberOfSections; SectionIndex++) {
@@ -1404,47 +1410,207 @@ PE::STATUS PE::SetSectionProperty(HANDLE hProcess, void* pFileBuffer, void* pMem
 
 			pSectionHeader++;
 		}
-		return PE_ERROR_SUCCESS;
+		return PE_STATUS_SUCCESS;
 	}
-	return PE_ERROR_INVALID_FORMAT;
+	return PE_STATUS_INVALID_FORMAT;
 }
 
+/**
+ * @brief 深度解析 PE 文件的资源表 (完整三层结构解析)
+ *
+ * 该函数遍历 PE 资源目录的三层结构（类型 -> 名称 -> 语言），提取所有叶子节点（资源数据）的信息。
+ * 支持按类型过滤 (TypeID)，也支持提取所有资源。
+ *
+ * @note 内存管理: 调用者需在使用完毕后释放 ResInfo.Items 的内存 (free(ResInfo.Items))。
+ *
+ * @param pFileBuffer [in] 指向 PE 文件内存缓冲区的指针
+ * @param ResInfo [out] 输出参数，包含解析出的资源项数组和数量
+ * @param TypeID [in] 指定要提取的资源类型 (可选，默认为 0xFFFF 提取所有)
+ * @return PE::STATUS
+ * @retval PE_STATUS_SUCCESS 解析成功
+ * @retval PE_STATUS_GET_RESOURCE_FAILURE 无资源表或解析失败
+ */
+PE::STATUS PE::GetResourceTable(void* pFileBuffer, ResourceInfo& ResInfo, ResourceType TypeID) {
+	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
 
-PE::STATUS PE::GetResourceTable(void* pFileBuffer, PE::ResourceType TypeID, PE::ResourceInfo& ResInfo) {
-	if (pFileBuffer == nullptr) return PE_ERROR_INVALID_PARAMETER;
+	// 1. 初始化输出参数
+	ResInfo.Items = nullptr;
+	ResInfo.Count = 0;
+
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
-	if (IsValid(pFileBuffer, pNtHeader) == PE_ERROR_SUCCESS) {
-		IMAGE_DATA_DIRECTORY DataDir = pNtHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_RESOURCE];
-		if (DataDir.VirtualAddress == 0 || DataDir.Size == 0) return PE_ERROR_GET_RESOURCE_FAILURE;
-		DWORD FileOffset = RvaToFoa(pFileBuffer, DataDir.VirtualAddress);
-		if (FileOffset == DWORD(-1)) return PE_ERROR_GET_FOA_FAILURE;
-		IMAGE_RESOURCE_DIRECTORY* pResource = reinterpret_cast<IMAGE_RESOURCE_DIRECTORY*>(
-			static_cast<char*>(pFileBuffer) + FileOffset
-		);
-		ResInfo.resNameCount = pResource->NumberOfNamedEntries;
-		ResInfo.resIDCount = pResource->NumberOfIdEntries;
-		DWORD ResourceCount = pResource->NumberOfIdEntries + pResource->NumberOfNamedEntries;
-		IMAGE_RESOURCE_DIRECTORY_ENTRY* pResourceDir = reinterpret_cast<IMAGE_RESOURCE_DIRECTORY_ENTRY*>(
-			static_cast<char*>(pFileBuffer) + FileOffset + sizeof(IMAGE_RESOURCE_DIRECTORY)
-		);
-		ResInfo.resIDOfSize = ResourceCount * sizeof(void*);
-		void* pRes = calloc(ResourceCount, sizeof(void*));
-		if (pRes == nullptr) return PE_ERROR_LOCAL_MEMORY_ALLOCATION_FAILURE;
-		ResInfo.resName = static_cast<wchar_t*>(pRes);
-		for (DWORD resIndex = 0; resIndex < ResourceCount; resIndex++) {
-			if (pResourceDir->NameIsString) {
-				FileOffset = RvaToFoa(pFileBuffer, pResourceDir->NameOffset);
-				void* pData = static_cast<void*>(reinterpret_cast<char*>(pResource) + FileOffset);
-				memcpy(pRes, pData, sizeof(wchar_t*));
-			}else {
-				memcpy(pRes, &pResourceDir->Id, sizeof(WORD));
+	if (IsValid(pFileBuffer, pNtHeader) != PE_STATUS_SUCCESS) {
+		return PE_STATUS_INVALID_FORMAT;
+	}
+
+	// 2. 获取资源表数据目录
+	IMAGE_DATA_DIRECTORY DataDir = pNtHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_RESOURCE];
+	if (DataDir.VirtualAddress == 0 || DataDir.Size == 0) {
+		return PE_STATUS_GET_RESOURCE_FAILURE;
+	}
+
+	// 3. 定位到资源目录头部 (第一层：类型层)
+	DWORD ResourceOffset = RvaToFoa(pFileBuffer, DataDir.VirtualAddress);
+	if (ResourceOffset == DWORD(-1)) return PE_STATUS_GET_FOA_FAILURE;
+
+	IMAGE_RESOURCE_DIRECTORY* pTypeDir = reinterpret_cast<IMAGE_RESOURCE_DIRECTORY*>(
+		static_cast<char*>(pFileBuffer) + ResourceOffset
+	);
+
+	// 4. 遍历第一层 (资源类型)
+	IMAGE_RESOURCE_DIRECTORY_ENTRY* pTypeEntry = reinterpret_cast<IMAGE_RESOURCE_DIRECTORY_ENTRY*>(pTypeDir + 1);
+
+	for (DWORD i = 0; i < pTypeDir->NumberOfNamedEntries + pTypeDir->NumberOfIdEntries; i++) {
+		// 检查类型是否匹配 (如果指定了 TypeID)
+		bool isNamedType = pTypeEntry->NameIsString;
+		WORD wType = 0;
+
+		if (isNamedType) {
+			// 处理命名类型 (很少见，通常是 ID)
+			continue;
+		}
+		else {
+			wType = (WORD)pTypeEntry->Id;
+		}
+
+		// 如果指定了 TypeID 且当前类型不匹配，跳过
+		if (TypeID != 0xFFFF && wType != TypeID) {
+			pTypeEntry++;
+			continue;
+		}
+
+		// 5. 进入第二层 (名称层)
+		if (pTypeEntry->DataIsDirectory) {
+			DWORD NameDirOffset = DataDir.VirtualAddress + pTypeEntry->OffsetToDirectory;
+			IMAGE_RESOURCE_DIRECTORY* pNameDir = reinterpret_cast<IMAGE_RESOURCE_DIRECTORY*>(
+				static_cast<char*>(pFileBuffer) + RvaToFoa(pFileBuffer, NameDirOffset)
+			);
+			IMAGE_RESOURCE_DIRECTORY_ENTRY* pNameEntry = reinterpret_cast<IMAGE_RESOURCE_DIRECTORY_ENTRY*>(pNameDir + 1);
+
+			// 6. 遍历第二层 (资源名称/ID)
+			for (DWORD j = 0; j < pNameDir->NumberOfNamedEntries + pNameDir->NumberOfIdEntries; j++) {
+
+				// 7. 进入第三层 (语言层)
+				if (pNameEntry->DataIsDirectory) {
+					DWORD LangDirOffset = DataDir.VirtualAddress + pNameEntry->OffsetToDirectory;
+					IMAGE_RESOURCE_DIRECTORY* pLangDir = reinterpret_cast<IMAGE_RESOURCE_DIRECTORY*>(
+						static_cast<char*>(pFileBuffer) + RvaToFoa(pFileBuffer, LangDirOffset)
+					);
+					IMAGE_RESOURCE_DIRECTORY_ENTRY* pLangEntry = reinterpret_cast<IMAGE_RESOURCE_DIRECTORY_ENTRY*>(pLangDir + 1);
+
+					// 8. 遍历第三层 (资源语言)
+					for (DWORD k = 0; k < pLangDir->NumberOfNamedEntries + pLangDir->NumberOfIdEntries; k++) {
+
+						// 9. 找到叶子节点 (资源数据)
+						if (!pLangEntry->DataIsDirectory) {
+							DWORD DataEntryOffset = DataDir.VirtualAddress + pLangEntry->OffsetToData;
+							IMAGE_RESOURCE_DATA_ENTRY* pDataEntry = reinterpret_cast<IMAGE_RESOURCE_DATA_ENTRY*>(
+								static_cast<char*>(pFileBuffer) + RvaToFoa(pFileBuffer, DataEntryOffset)
+							);
+
+							// 10. 动态扩容存储数组 (类似 GetExportTable 的逻辑)
+							if (ResInfo.Items == nullptr) {
+								ResInfo.Items = static_cast<ResourceItem*>(calloc(1, sizeof(ResourceItem)));
+							}
+							else {
+								void* tmp = realloc(ResInfo.Items, (ResInfo.Count + 1) * sizeof(ResourceItem));
+								if (!tmp) return PE_STATUS_LOCAL_MEMORY_ALLOCATION_FAILURE;
+								ResInfo.Items = static_cast<ResourceItem*>(tmp);
+							}
+
+							// 11. 填充资源信息
+							ResourceItem* pItem = &ResInfo.Items[ResInfo.Count];
+
+							// 填充类型 (转换为字符串方便查看)
+							if (wType >= 1 && wType <= 16) {
+								// 这里可以写一个映射表，或者直接存 ID
+								swprintf(pItem->TypeName, 32, L"TYPE_%d", wType);
+							}
+							else {
+								swprintf(pItem->TypeName, 32, L"ID_%d", wType);
+							}
+
+							// 填充名称 (判断是字符串还是 ID)
+							if (pNameEntry->NameIsString) {
+								DWORD NameRVA = pNameEntry->NameOffset;
+								// 这里需要解析字符串结构，为了简化，示例中直接标记
+								wcscpy_s(pItem->Name, 64, L"NamedResource");
+							}
+							else {
+								swprintf(pItem->Name, 64, L"ID_%d", pNameEntry->Id);
+							}
+
+							// 填充语言 ID
+							swprintf(pItem->Language, 16, L"LANG_%04x", pLangEntry->Id);
+
+							// 填充数据信息
+							pItem->DataRVA = pDataEntry->OffsetToData;
+							pItem->Size = pDataEntry->Size;
+
+							ResInfo.Count++;
+						}
+						pLangEntry++;
+					}
+				}
+				pNameEntry++;
 			}
-			pRes = static_cast<char*>(pRes) + sizeof(void*);
-			pResourceDir++;
+		}
+		pTypeEntry++;
+	}
+
+	if (ResInfo.Count == 0) {
+		return PE_STATUS_GET_RESOURCE_FAILURE;
+	}
+
+	return PE_STATUS_SUCCESS;
+}
+
+/**
+ * @brief 计算数据缓冲区的香农熵 (Shannon Entropy)
+ *
+ * 该函数通过统计字节频率来计算数据的混乱程度。
+ * 熵值范围通常为 0.0 - 8.0。
+ * - 熵值 < 6.0: 通常为明文或未压缩代码
+ * - 熵值 > 7.0: 通常为压缩、加密或加壳数据
+ *
+ * 香农熵的计算公式：H = -Σ(p_i * log2(p_i))，其中 p_i 是第 i 个符号出现的概率
+ *
+ * @param buffer [in] 指向待分析数据缓冲区的指针 (例如 PE 文件内存映射)
+ * @param size [in] 数据缓冲区的大小 (字节数)
+ * @param out_Entropy [out] 引用传递，用于返回计算出的熵值
+ * @return PE::STATUS
+ * @retval PE_STATUS_SUCCESS 计算成功
+ * @retval PE_STATUS_INVALID_PARAMETER 输入指针为空
+ * @retval PE_STATUS_FILE_INVALID_SIZE 数据大小为 0
+ */
+PE::STATUS PE::CalculateEntropy(const void* buffer, size_t size, double& out_Entropy) {
+	if (buffer == nullptr) {
+		out_Entropy = 0.0;
+		return PE_STATUS_INVALID_PARAMETER;
+	}
+	if (size == 0) {
+		out_Entropy = 0.0;
+		return PE_STATUS_FILE_INVALID_SIZE;
+	}
+
+	// 统计每个字节值的频率
+	unsigned long long frequency[256] = { 0 };
+	for (size_t fpPos = 0; fpPos < size; fpPos++) {
+		unsigned char byte = static_cast<const unsigned char*>(buffer)[fpPos];
+		frequency[byte]++;
+	}
+
+	// 计算熵值
+	double entropy = 0.0;
+	for (unsigned int i = 0; i < 256; i++) {
+		if (frequency[i] > 0) {
+			double p = static_cast<double>(frequency[i]) / size;
+			entropy -= p * log2(p);
 		}
 	}
-	return PE_ERROR_INVALID_FORMAT;
+	out_Entropy = entropy;
+	return PE_STATUS_SUCCESS;
 }
+
 /*
 * 本意是想通过内存的数据还原成一个文件，失败
 PE::STATUS PE::MemoryToFileDump(void* pMemoryImage, const wchar_t* DumpFile)
@@ -1539,39 +1705,55 @@ PE::STATUS PE::MemoryToFileDump(void* pMemoryImage, const wchar_t* DumpFile)
 */
 
 int main(){
-	/*
+	/*		// 计算熵值
 	DWORD FileSize = 0;
-	void* pFile = PE::Read(L"C:\\Users\\OMEN\\Desktop\\KernelBase.dll", FileSize);
-	PE::ResourceInfo Res = { 0 };
-	PE::GetResourceTable(pFile, PE::Icon , Res);
+	void* pFile = nullptr;
+	PE::STATUS a = PE::Read(L"C:\\Users\\OMEN\\Desktop\\test_des.exe", pFile, FileSize);
+	double entropy = 0.0;
+	a = PE::CalculateEntropy(pFile, FileSize, entropy);
+	std::cout << "Entropy: " << entropy << std::endl;
 	*/
 
-	
+	/*		// 获取资源表
+	DWORD FileSize = 0;
+	void* pFile = nullptr;
+	PE::STATUS a = PE::Read(L"C:\\Users\\OMEN\\Desktop\\test_src.exe", pFile, FileSize);
+	PE::ResourceInfos ResInfo = { 0 };
+	a = ParseResourceTable(pFile, ResInfo, PE::Icon);
+	for(int i = 0; i < ResInfo.Count; i++) {
+		std::wcout << L"Type: " << ResInfo.Items[i].TypeName << L"\tName: " << ResInfo.Items[i].Name << L"\tLanguage: " << ResInfo.Items[i].Language << L"\tDataRVA: " << std::hex << ResInfo.Items[i].DataRVA << L"\tSize: " << ResInfo.Items[i].Size << std::endl;
+	}
+	a = PE::PE_STATUS_SUCCESS;
+
+	*/
+
+
+	/*		// 获取导出表
 	DWORD FileSize = 0; WORD Bit = 0;
 	void* pFile = nullptr;
 	PE::STATUS a = PE::Read(L"C:\\Users\\OMEN\\Desktop\\KernelBase.dll", pFile, FileSize);
-
-	 PE::ExportInfo* pExp = nullptr;
-	 PE::GetExportTable(pFile, pExp);
-	 for (int i = 0; i < pExp->ExportFuncSize / sizeof(PE::FuncInfo); i++) {
-	 	PE::FuncInfo* pCurrent = (PE::FuncInfo*)((char*)pExp->Fn + sizeof(PE::FuncInfo) * i);
-	 	std::cout  << pCurrent->Ordinal << "\t\t" <<  pCurrent->RVA_Address << "\t\t" <<  pCurrent->Name << "\r\n";
-	 }
-	
+	PE::ExportInfo* pExp = nullptr;
+	a = PE::GetExportTable(pFile, pExp);
+	a = PE::PE_STATUS_SUCCESS;
+	for (int i = 0; i < pExp->ExportFuncSize / sizeof(PE::FuncInfo); i++) {
+		PE::FuncInfo* pCurrent = (PE::FuncInfo*)((char*)pExp->Fn + sizeof(PE::FuncInfo) * i);
+		std::cout  << pCurrent->Ordinal << "\t\t" <<  pCurrent->RVA_Address << "\t\t" <<  pCurrent->Name << "\r\n";
+	}
+	*/
 	
 	/*
 	PE::MemoryDump(L"C:\\Users\\OMEN\\Desktop\\1.exe", L"C:\\Users\\OMEN\\Desktop\\1.txt");
 	*/
 
-	/*
+	/*		 // 计算校验和
 	DWORD FileSum = 0, CheckSum = 0;
-	//MapFileAndCheckSumW(L"C:\\Users\\OMEN\\Desktop\\test1.exe", &FileSum, &CheckSum);
+	//MapFileAndCheckSumW(L"C:\\Users\\OMEN\\Desktop\\test_src.exe", &FileSum, &CheckSum);
 	DWORD FileSize = 0; bool RTN = false;
-	void* pFile = PE::Read(L"C:\\Users\\OMEN\\Desktop\\test1.exe", FileSize);
+	void* pFile = PE::Read(L"C:\\Users\\OMEN\\Desktop\\test_src.exe", FileSize);
 	PE::GetPEChecksum(pFile, FileSize, FileSum, CheckSum, RTN);
 	*/
 
-	/*
+	/*		// Dump各个节区数据
 	DWORD FileSize = 0;
 	void* pFile = PE::Read(L"C:\\Users\\OMEN\\Desktop\\MFCLibpvzCheat64.dll", FileSize);
 	void* pSectionName = nullptr;
