@@ -91,6 +91,7 @@ namespace PE {
 		PE_STATUS_LOCAL_MEMORY_READ_FAILURE,		// 本地内存读取失败
 		PE_STATUS_LOAD_MODULE_FAILURE,				// 加载模块失败
 		PE_STATUS_GET_MODULE_BASE_FAILURE,			// 获取模块基址失败
+        PE_STATUS_GET_MODULE_INFO_FAILURE,          // 获取模块信息失败
 		PE_STATUS_MODULE_NOT_FOUND,					// 模块未找到
 		PE_STATUS_MODULE_RANGE_NOT_IN				// 模块范围不在预期范围内
 	};
@@ -616,8 +617,7 @@ PE::STATUS PE::FileSectionDump(void* pFileBuffer, DumpStruct Signature, char* Se
  * @retval PE_STATUS_SUCCESS                 转储成功
  * @retval PE_STATUS_FILE_OPEN_FAILURE        无法创建目标进程或无法创建输出文件
  * @retval PE_STATUS_PROCESS_OPEN_FAILURE     无法打开进程句柄 (权限不足)
- * @retval PE_STATUS_GET_MODULE_BASE_FAILURE  无法获取模块基址
-  * @retval PE_STATUS_GET_MODULE_INFO_FAILURE 无法获取模块信息 (GetModuleInformation 失败)
+ * @retval PE_STATUS_GET_MODULE_BASE_FAILURE  无法获取模块基址  * @retval PE_STATUS_GET_MODULE_INFO_FAILURE 无法获取模块信息 (GetModuleInformation 失败)
  * @retval PE_STATUS_REMOTE_MEMORY_READ_FAILURE 读取远程进程内存失败 (可能被反作弊保护)
  * @retval PE_STATUS_FILE_WRITE_FAILURE       写入磁盘文件失败 (字节数不匹配)
  */
