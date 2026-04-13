@@ -45,12 +45,15 @@ uintptr_t GetModuleBaseAddress(DWORD pid, const wchar_t* Module) {
 * 9. 壳检测 (Packers Detection)				
 */
 
-/*
+/*  核心使用规范与重要注意事项
 * 
+* Part 1
 * 调用 Read，GetSectionName, GetExportTable，GetResourceTable 这些方法之后一定要记得调用 free(pointer);
 * 调用 BuildMemoryImage 方法之后一定要调用 VirtualFree(pointer, 0, MEM_RELEASE);
 * 否则会发生内存泄露
 * 
+* Part 2
+* 为了防止架构不匹配导致的崩溃，GetExportTable、FixImportTable 和 Relocation 在执行核心逻辑前都会强制验证目标文件的平台位数。
 */
 namespace PE {
 	// 错误状态枚举，表示各种可能的错误情况
@@ -186,33 +189,38 @@ namespace PE {
  * @return PE::STATUS       返回读取操作的状态码
  * @retval PE_STATUS_SUCCESS            读取成功
  * @retval PE_STATUS_INVALID_PARAMETER  参数无效 (FileName 为空)
+ * @retval PE_STATUS_INVALID_FORMAT       源文件不是有效的 PE 格式
  * @retval PE_STATUS_FILE_NOT_FOUND     文件不存在或无法访问
  * @retval PE_STATUS_FILE_OPEN_FAILURE  打开文件失败 (权限不足或文件被占用)
- * @retval PE_STATUS_LOCAL_MEMORY_ALLOCATION_FAILURE 内存分配失败 (系统资源不足)
+ * @retval PE_STATUS_FILE_INVALID_SIZE       源文件无法获取文件长度
+ * @retval PE_STATUS_LOCAL_MEMORY_WRITE_FAILURE 数据写入失败 (系统资源不足)
  */
 PE::STATUS  PE::Read(const wchar_t* FileName, void*& out_pFileBuffer, DWORD& out_FileSize) {
 	if (FileName == nullptr) return PE_STATUS_INVALID_PARAMETER;
-	BOOL RTN = FALSE;
+	BOOL apiRTN = FALSE;
+	STATUS RTN = PE_STATUS_SUCCESS;
 	out_pFileBuffer = nullptr;
 	DWORD ReadTotalBytes = NULL;
 	if (GetFileAttributesW(FileName) == INVALID_FILE_ATTRIBUTES) return PE_STATUS_FILE_NOT_FOUND;
 	HANDLE hFile = CreateFileW(FileName, GENERIC_READ, NULL, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-	if (hFile != INVALID_HANDLE_VALUE) {
+	if (hFile != 0 && hFile != INVALID_HANDLE_VALUE) {
 		LARGE_INTEGER FS;
 		RTN = GetFileSizeEx(hFile, &FS);
 		out_FileSize = static_cast<DWORD>(FS.QuadPart);
-		if (RTN && out_FileSize != NULL) {
+		if (apiRTN && out_FileSize != NULL) {
 			out_pFileBuffer = calloc(1, out_FileSize);
 			if (out_pFileBuffer != nullptr) {
-				RTN = ReadFile(hFile, out_pFileBuffer, out_FileSize, &ReadTotalBytes, NULL);
-				if (RTN && out_FileSize == ReadTotalBytes) {
+				apiRTN = ReadFile(hFile, out_pFileBuffer, out_FileSize, &ReadTotalBytes, NULL);
+				if (apiRTN && out_FileSize == ReadTotalBytes) {
 					CloseHandle(hFile);
 					return PE_STATUS_SUCCESS;
-				}
+				}else RTN = PE_STATUS_LOCAL_MEMORY_WRITE_FAILURE;
 				free(out_pFileBuffer);
-			}
-		}
+				out_pFileBuffer = nullptr;
+			}else RTN = PE_STATUS_LOCAL_MEMORY_ALLOCATION_FAILURE;
+		}else RTN = PE_STATUS_FILE_INVALID_SIZE;
 		CloseHandle(hFile);
+		return RTN;
 	}
 	return PE_STATUS_FILE_OPEN_FAILURE;
 }
@@ -484,9 +492,10 @@ PE::STATUS PE::GetPEChecksum(void* pFileBuffer, DWORD FileSize, DWORD& file_Chec
  * @return PE::STATUS 操作结果状态码
  * @retval PE_STATUS_SUCCESS              转储成功
  * @retval PE_STATUS_INVALID_PARAMETER    参数无效 (如指定 SectionInfo 但未提供节名)
+ * @retval PE_STATUS_INVALID_FORMAT       源文件不是有效的 PE 格式
  * @retval PE_STATUS_FILE_OPEN_FAILURE    无法创建或写入目标文件
  * @retval PE_STATUS_LOCAL_MEMORY_WRITE_FAILURE 写入过程中发生错误 (字节数不匹配)
- * @retval PE_STATUS_INVALID_FORMAT       源文件不是有效的 PE 格式
+
  */
 PE::STATUS PE::FileSectionDump(void* pFileBuffer, DumpStruct Signature, char* SectionName, const wchar_t* DumpFile) {
 	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
@@ -496,7 +505,7 @@ PE::STATUS PE::FileSectionDump(void* pFileBuffer, DumpStruct Signature, char* Se
 	if (IsValid(pFileBuffer, pNtHeader) == PE_STATUS_SUCCESS) {
 		// 创建输出文件
 		HANDLE hFile = CreateFileW(DumpFile, GENERIC_WRITE, NULL, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-		if (hFile == INVALID_HANDLE_VALUE) return PE_STATUS_FILE_OPEN_FAILURE;
+		if (hFile == 0 || hFile == INVALID_HANDLE_VALUE) return PE_STATUS_FILE_OPEN_FAILURE;
 
 		bool RTN = false;
 		void* WritePos = nullptr; // 数据源指针
@@ -574,7 +583,10 @@ PE::STATUS PE::FileSectionDump(void* pFileBuffer, DumpStruct Signature, char* Se
 		CloseHandle(hFile);
 
 		// 检查是否写入成功且字节数匹配
-		if (RTN && DumpSize == WriteBytes) return PE_STATUS_LOCAL_MEMORY_WRITE_FAILURE;
+		if (RTN && DumpSize == WriteBytes) 
+		    return PE_STATUS_SUCCESS;
+		else
+		    return PE_STATUS_LOCAL_MEMORY_WRITE_FAILURE;
 	}
 	return PE_STATUS_INVALID_FORMAT;
 }
@@ -603,9 +615,9 @@ PE::STATUS PE::FileSectionDump(void* pFileBuffer, DumpStruct Signature, char* Se
  * @retval PE_STATUS_SUCCESS                 转储成功
  * @retval PE_STATUS_FILE_OPEN_FAILURE        无法创建目标进程或无法创建输出文件
  * @retval PE_STATUS_PROCESS_OPEN_FAILURE     无法打开进程句柄 (权限不足)
- * @retval PE_STATUS_GET_MODULE_BASE_FAILURE  无法获取模块信息 (GetModuleInformation 失败)
+ * @retval PE_STATUS_GET_MODULE_BASE_FAILURE  无法获取模块基址
+  * @retval PE_STATUS_GET_MODULE_INFO_FAILURE 无法获取模块信息 (GetModuleInformation 失败)
  * @retval PE_STATUS_REMOTE_MEMORY_READ_FAILURE 读取远程进程内存失败 (可能被反作弊保护)
- * @retval PE_STATUS_LOCAL_MEMORY_ALLOCATION_FAILURE 本地内存分配失败
  * @retval PE_STATUS_FILE_WRITE_FAILURE       写入磁盘文件失败 (字节数不匹配)
  */
 PE::STATUS PE::MemoryDump(const wchar_t* ExecuteFile, const wchar_t* DumpFile) {
@@ -649,9 +661,9 @@ PE::STATUS PE::MemoryDump(const wchar_t* ExecuteFile, const wchar_t* DumpFile) {
 							RTN = PE_STATUS_REMOTE_MEMORY_READ_FAILURE;
 						}
 					}else RTN = PE_STATUS_LOCAL_MEMORY_ALLOCATION_FAILURE;
-				}else RTN = PE_STATUS_GET_MODULE_BASE_FAILURE;
-			}else RTN = PE_STATUS_MODULE_NOT_FOUND;
-		}else RTN = PE_STATUS_PROCESS_OPEN_FAILURE;
+				}else RTN = PE_STATUS_GET_MODULE_INFO_FAILURE;
+			}else RTN = PE_STATUS_GET_MODULE_BASE_FAILURE;
+		}else RTN = PE_STATUS_MODULE_NOT_FOUND;
 
 		// 6. 清理：终止进程并关闭句柄
 		// 注意：这里直接 TerminateProcess 是非常暴力的，可能导致文件占用或资源泄露，但在 Dump 工具中常见
@@ -659,7 +671,7 @@ PE::STATUS PE::MemoryDump(const wchar_t* ExecuteFile, const wchar_t* DumpFile) {
 		TerminateProcess(pi.hProcess, 0);
 		CloseHandle(pi.hThread);
 		CloseHandle(pi.hProcess);
-	}else RTN = PE_STATUS_FILE_OPEN_FAILURE;
+	}else RTN = PE_STATUS_PROCESS_OPEN_FAILURE;
 
 	// 如果前面任何步骤失败，直接返回错误码
 	if (RTN != PE_STATUS_SUCCESS) return RTN;
@@ -676,7 +688,8 @@ PE::STATUS PE::MemoryDump(const wchar_t* ExecuteFile, const wchar_t* DumpFile) {
 
 	// 释放本地分配的内存
 	VirtualFree(pMemoryImage, 0, MEM_RELEASE);
-
+	// 检查句柄是否有效
+    if(hFile == 0 || hFile == INVALID_HANDLE_VALUE) return PE_STATUS_PROCESS_OPEN_FAILURE;
 	// 检查 WriteBytes 是否等于 SizeOfImage
 	RTN = (WriteBytes == ModInfo.SizeOfImage) ? PE_STATUS_SUCCESS : PE_STATUS_FILE_WRITE_FAILURE;
 	return RTN;
@@ -821,8 +834,8 @@ DWORD PE::FoaToRva(void* pBuffer, DWORD FileSize, DWORD FOA) {
  * @return PE::STATUS  操作结果状态码
  * @retval PE_STATUS_SUCCESS                 构建成功
  * @retval PE_STATUS_INVALID_PARAMETER       输入缓冲区指针为空
- * @retval PE_STATUS_LOCAL_MEMORY_ALLOCATION_FAILURE 内存分配失败
  * @retval PE_STATUS_INVALID_FORMAT          文件格式无效
+ * @retval PE_STATUS_LOCAL_MEMORY_ALLOCATION_FAILURE 内存分配失败
  */
 PE::STATUS PE::BuildMemoryImage(void* pFileBuffer, void*& pMemoryImage) {
 	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
@@ -897,6 +910,7 @@ PE::STATUS PE::BuildMemoryImage(void* pFileBuffer, void*& pMemoryImage) {
  * @return PE::STATUS  操作结果状态码
  * @retval PE_STATUS_SUCCESS							解析成功
  * @retval PE_STATUS_INVALID_PARAMETER				输入缓冲区为空
+ * @retval PE_STATUS_INVALID_FORMAT                   文件格式无效
  * @retval PE_STATUS_ARCH_MISMATCH					文件架构与编译环境不匹配 (32/64位)
  * @retval PE_STATUS_GET_EXPORT_FAILURE				文件无导出表或解析过程中断
  * @retval PE_STATUS_LOCAL_MEMORY_ALLOCATION_FAILURE 内存分配失败
@@ -1072,18 +1086,37 @@ PE::STATUS PE::GetExportTable(void* pFileBuffer, ExportInfo*& out_pExpInfo) {
 
 /**
  * @brief 修复导入表 (针对远程进程)
- * 解析本地镜像的导入表，加载对应的 DLL，获取函数在**本地进程**中的偏移，
- * 然后计算出该函数在**远程进程** (pid) 中的绝对地址，并填入 IAT。
  *
- * @param pid 目标远程进程的 ID
- * @param pMemoryImage 本地已构建好的 PE 内存镜像
- * @param pRemoteImageBase 该镜像在远程进程中的预期基址 (用于计算最终绝对地址)
- * @return STATUS 成功返回 true，失败返回 false
+ * 该函数用于手动映射场景。它解析本地镜像的导入表，加载对应的 DLL，
+ * 获取函数在**本地进程**中的地址偏移 (RVA)，然后结合**远程进程**中 DLL 的基址，
+ * 计算出函数在远程进程中的绝对地址，并填入本地镜像的 IAT 中。
+ *
+ * @note 核心逻辑:
+ * 1. 本地加载: 使用 LoadLibrary 加载依赖 DLL，确保能获取到函数地址。
+ * 2. 获取远程基址: 使用 GetModuleBaseAddress 获取该 DLL 在目标进程 (pid) 中的基址。
+ * 3. 计算偏移: 计算函数地址相对于本地 DLL 基址的偏移量 (RVA)。
+ * 4. 合成地址: 最终 IAT 条目值 = 远程 DLL 基址 + 函数偏移 (RVA)。
+ *
+ * @warning 版本一致性假设:
+ * 此算法假设目标进程中加载的 DLL 版本与本地系统版本一致。
+ * 如果版本不同，函数的 RVA 可能会发生变化，导致调用错误的代码地址。
+ *
+ * @param pid             [in] 目标远程进程的 ID
+ * @param pMemoryImage    [in] 本地已构建好的 PE 内存镜像 (包含待修复的 IAT)
+ * @return PE::STATUS     操作结果状态码
+ * @retval PE_STATUS_SUCCESS                 修复成功
+ * @retval PE_STATUS_INVALID_PARAMETER       进程 ID 或 指针 无效
+ * @retval PE_STATUS_INVALID_FORMAT          镜像无效不匹配
+ * @retval PE_STATUS_ARCH_MISMATCH		    文件架构与编译环境不匹配 (32/64位)
+ * @retval PE_STATUS_LOAD_MODULE_FAILURE     无法在本地加载依赖 DLL
+ * @retval PE_STATUS_GET_MODULE_BASE_FAILURE 无法获取远程进程中 DLL 的基址
+ * @retval PE_STATUS_MODULE_NOT_FOUND        无法获取本地模块信息 (用于校验)
+ * @retval PE_STATUS_MODULE_RANGE_NOT_IN     获取到的函数地址不在模块范围内 (异常)
  */
 PE::STATUS PE::FixImportTable(DWORD pid, void* pMemoryImage /*, void* pRemoteImageBase*/) {
 	if (pid == 0) return PE_STATUS_INVALID_PARAMETER;
-	if (pMemoryImage == nullptr) return PE_STATUS_INVALID_FORMAT;
-	//if (pRemoteImageBase == nullptr) return false;
+	if (pMemoryImage == nullptr) return PE_STATUS_INVALID_PARAMETER;
+	//if (pRemoteImageBase == nullptr) return PE_STATUS_INVALID_PARAMETER;
 
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
 	if (IsValid(pMemoryImage, pNtHeader)) {
@@ -1193,32 +1226,30 @@ PE::STATUS PE::FixImportTable(DWORD pid, void* pMemoryImage /*, void* pRemoteIma
 }
 
 /**
- * @brief 修复导入表 (针对远程进程)
- *
- * 该函数用于手动映射场景。它解析本地镜像的导入表，加载对应的 DLL，
- * 获取函数在**本地进程**中的地址偏移 (RVA)，然后结合**远程进程**中 DLL 的基址，
- * 计算出函数在远程进程中的绝对地址，并填入本地镜像的 IAT 中。
- *
- * @note 核心逻辑:
- * 1. 本地加载: 使用 LoadLibrary 加载依赖 DLL，确保能获取到函数地址。
- * 2. 获取远程基址: 使用 GetModuleBaseAddress 获取该 DLL 在目标进程 (pid) 中的基址。
- * 3. 计算偏移: 计算函数地址相对于本地 DLL 基址的偏移量 (RVA)。
- * 4. 合成地址: 最终 IAT 条目值 = 远程 DLL 基址 + 函数偏移 (RVA)。
- *
+ * @brief 修复 PE 映像的重定位表 (Base Relocation)
+ * 
+ * 在手动映射 (Manual Map) 注入技术中，如果目标进程无法在 PE 文件首选的 
+ * ImageBase（镜像基址）分配内存，加载器必须修正所有“硬编码”的绝对地址。
+ * 该函数模拟 Windows 加载器的重定位过程，将映像从“首选基址”修正为“实际加载基址”。
+ * 
+ * @note 重定位原理:
+ * 1. 计算偏移量 (Delta): pRemoteImage - pMemoryImage
+ * 2. 遍历重定位块 (Block)，找到所有需要修正的偏移位置。
+ * 3. 内存中的值 = 原始值 + Delta
+ * 
  * @warning 版本一致性假设:
  * 此算法假设目标进程中加载的 DLL 版本与本地系统版本一致。
  * 如果版本不同，函数的 RVA 可能会发生变化，导致调用错误的代码地址。
- *
- * @param pid             [in] 目标远程进程的 ID
- * @param pMemoryImage    [in] 本地已构建好的 PE 内存镜像 (包含待修复的 IAT)
- * @return PE::STATUS     操作结果状态码
- * @retval PE_STATUS_SUCCESS                 修复成功
- * @retval PE_STATUS_INVALID_PARAMETER       进程 ID 无效
- * @retval PE_STATUS_INVALID_FORMAT          镜像无效或架构不匹配
- * @retval PE_STATUS_LOAD_MODULE_FAILURE     无法在本地加载依赖 DLL
- * @retval PE_STATUS_GET_MODULE_BASE_FAILURE 无法获取远程进程中 DLL 的基址
- * @retval PE_STATUS_MODULE_NOT_FOUND        无法获取本地模块信息 (用于校验)
- * @retval PE_STATUS_MODULE_RANGE_NOT_IN     获取到的函数地址不在模块范围内 (异常)
+ * 
+ * @param pMemoryImage [in/out] 指向本地已构建的 PE 内存镜像的基址。
+ *                              函数会直接修改该内存区域中的重定位项。
+ * @param pRemoteImage [in]     目标远程进程中，该 PE 映像实际被分配到的基址
+ *                              (即：VirtualAlloc 在远程进程返回的地址)。
+ * @return PE::STATUS 
+ * @retval PE_STATUS_SUCCESS 重定位成功或无需重定位
+ * @retval PE_STATUS_INVALID_PARAMETER 输入指针为空
+ * @retval PE_STATUS_INVALID_FORMAT 文件格式无效 (非 PE 格式)
+ * @retval PE_STATUS_ARCH_MISMATCH  文件架构与编译环境不匹配 (32/64位)
  */
 PE::STATUS PE::Relocation(void* pMemoryImage, void* pRemoteImage) {
 	if (pMemoryImage == nullptr) return PE_STATUS_INVALID_PARAMETER;
@@ -1309,6 +1340,7 @@ PE::STATUS PE::Relocation(void* pMemoryImage, void* pRemoteImage) {
  * @retval PE_STATUS_SUCCESS          设置成功
  * @retval PE_STATUS_INVALID_PARAMETER 输入缓冲区指针为空
  * @retval PE_STATUS_INVALID_FORMAT   文件格式无效
+ * @retval PE_STATUS_SET_SECTION_PROPERTY_FAILURE 部分设置节属性失败
  */
 PE::STATUS PE::SetSectionProperty(void* pFileBuffer, void* pMemoryImage) {
 	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
@@ -1342,15 +1374,15 @@ PE::STATUS PE::SetSectionProperty(void* pFileBuffer, void* pMemoryImage) {
 			void* pSectionAddr = (char*)pMemoryImage + pSectionHeader[SectionIndex].VirtualAddress;
 
 			DWORD oldmemPropery = 0;
+			STATUS RTN = PE_STATUS_SUCCESS
 			// 3. 调用 Windows API 修改内存保护属性
 			// 范围：节的虚拟大小 (VirtualSize)，确保覆盖节在内存中的实际占用
-			if (!VirtualProtect(pSectionAddr, pSectionHeader[SectionIndex].Misc.VirtualSize, memProperty, &oldmemPropery)) {
-				// 可选：记录错误，但这里继续尝试下一个节
-			}
+			if (!VirtualProtect(pSectionAddr, pSectionHeader[SectionIndex].Misc.VirtualSize, memProperty, &oldmemPropery))
+				RTN = PE_STATUS_SET_SECTION_PROPERTY_FAILURE;
 
 			pSectionHeader++; // 移动到下一个节表项
 		}
-		return PE_STATUS_SUCCESS;
+		return RTN;
 	}
 	return PE_STATUS_INVALID_PARAMETER;
 }
@@ -1376,6 +1408,7 @@ PE::STATUS PE::SetSectionProperty(void* pFileBuffer, void* pMemoryImage) {
  * @retval PE_STATUS_SUCCESS          设置成功
  * @retval PE_STATUS_INVALID_PARAMETER 句柄或指针无效
  * @retval PE_STATUS_INVALID_FORMAT   文件格式无效
+ * @retval PE_STATUS_SET_SECTION_PROPERTY_FAILURE 部分设置节属性失败
  */
 PE::STATUS PE::SetSectionProperty(HANDLE hProcess, void* pFileBuffer, void* pMemoryImage) {
 	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
@@ -1403,14 +1436,13 @@ PE::STATUS PE::SetSectionProperty(HANDLE hProcess, void* pFileBuffer, void* pMem
 			void* pSectionAddr = (char*)pMemoryImage + pSectionHeader[SectionIndex].VirtualAddress;
 
 			DWORD oldmemPropery = 0;
+			STATUS RTN = PE_STATUS_SUCCESS;
 			// 使用 VirtualProtectEx 操作远程进程内存
-			if (!VirtualProtectEx(hProcess, pSectionAddr, pSectionHeader[SectionIndex].Misc.VirtualSize, memProperty, &oldmemPropery)) {
-				// 失败处理 (如权限不足)
-			}
-
+			if (!VirtualProtectEx(hProcess, pSectionAddr, pSectionHeader[SectionIndex].Misc.VirtualSize, memProperty, &oldmemPropery)) 
+				RTN = PE_STATUS_SET_SECTION_PROPERTY_FAILURE;
 			pSectionHeader++;
 		}
-		return PE_STATUS_SUCCESS;
+		return RTN;
 	}
 	return PE_STATUS_INVALID_FORMAT;
 }
@@ -1428,6 +1460,10 @@ PE::STATUS PE::SetSectionProperty(HANDLE hProcess, void* pFileBuffer, void* pMem
  * @param TypeID [in] 指定要提取的资源类型 (可选，默认为 0xFFFF 提取所有)
  * @return PE::STATUS
  * @retval PE_STATUS_SUCCESS 解析成功
+ * @retval PE_STATUS_INVALID_PARAMETER 指针无效
+ * @retval PE_STATUS_INVALID_FORMAT   文件格式无效
+ * @retval PE_STATUS_GET_FOA_FAILURE    RVA 转 FOA 失败
+ * @retval PE_STATUS_LOCAL_MEMORY_ALLOCATION_FAILURE    本地内存分配失败
  * @retval PE_STATUS_GET_RESOURCE_FAILURE 无资源表或解析失败
  */
 PE::STATUS PE::GetResourceTable(void* pFileBuffer, ResourceInfo& ResInfo, ResourceType TypeID) {
@@ -1749,20 +1785,22 @@ int main(){
 	DWORD FileSum = 0, CheckSum = 0;
 	//MapFileAndCheckSumW(L"C:\\Users\\OMEN\\Desktop\\test_src.exe", &FileSum, &CheckSum);
 	DWORD FileSize = 0; bool RTN = false;
-	void* pFile = PE::Read(L"C:\\Users\\OMEN\\Desktop\\test_src.exe", FileSize);
+	void* pFile = nullptr;
+	PE::STATUS a = PE::Read(L"C:\\Users\\OMEN\\Desktop\\test_src.exe", pFile, FileSize);
 	PE::GetPEChecksum(pFile, FileSize, FileSum, CheckSum, RTN);
 	*/
 
 	/*		// Dump各个节区数据
 	DWORD FileSize = 0;
-	void* pFile = PE::Read(L"C:\\Users\\OMEN\\Desktop\\MFCLibpvzCheat64.dll", FileSize);
+	void* pFile = nullptr;
+	PE::STATUS a = PE::Read(L"C:\\Users\\OMEN\\Desktop\\MFCLibpvzCheat64.dll", pFile, FileSize);
 	void* pSectionName = nullptr;
 	size_t SectionNameSize = 0;
 	PE::DumpStructData(pFile, PE::DOS, nullptr, L"D:\\MFCLibpvzCheat64-DOS.txt");
 	PE::DumpStructData(pFile, PE::DOS_stub, nullptr, L"D:\\MFCLibpvzCheat64-DOS_stub.txt");
 	PE::DumpStructData(pFile, PE::NT, nullptr, L"D:\\MFCLibpvzCheat64-NT.txt");
 	PE::DumpStructData(pFile, PE::SectionTable, nullptr, L"D:\\MFCLibpvzCheat64-SectionTable.txt");
-	if (PE::GetSectionName(pFile, pSectionName, SectionNameSize)) {
+	if (PE::GetSectionName(pFile, pSectionName, SectionNameSize) == PE_STATUS_SUCCESS) {
 		for (int Index = 0; Index < SectionNameSize / sizeof(char[8]); Index++) {
 			std::cout << (char*)pSectionName + Index * sizeof(char[8]) << "\n";
 			std::wstring out_File = L"D:\\MFCLibpvzCheat64-Section";
