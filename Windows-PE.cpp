@@ -191,10 +191,10 @@ namespace PE {
  * @retval PE_STATUS_INVALID_PARAMETER  参数无效 (FileName 为空)
  * @retval PE_STATUS_INVALID_FORMAT     源文件不是有效的 PE 格式
  * @retval PE_STATUS_FILE_NOT_FOUND     文件不存在或无法访问
- * @retval PE_STATUS_FILE_OPEN_FAILURE  打开文件失败 (权限不足或文件被占用)
- * @retval PE_STATUS_FILE_INVALID_SIZE  源文件无法获取文件长度
- * @retval PE_STATUS_LOCAL_MEMORY_ALLOCATION_FAILURE      本地内存申请失败
- * @retval PE_STATUS_LOCAL_MEMORY_WRITE_FAILURE           本地数据写入失败 (系统资源不足)
+ * @retval PE_STATUS_FILE_OPEN_FAILURE   打开文件失败 (权限不足或文件被占用)
+ * @retval PE_STATUS_FILE_INVALID_SIZE    源文件无法获取文件长度
+ * @retval PE_STATUS_LOCAL_MEMORY_ALLOCATION_FAILURE    本地内存申请失败
+ * @retval PE_STATUS_LOCAL_MEMORY_WRITE_FAILURE          数据写入失败 (系统资源不足)
  */
 PE::STATUS  PE::Read(const wchar_t* FileName, void*& out_pFileBuffer, DWORD& out_FileSize) {
 	if (FileName == nullptr) return PE_STATUS_INVALID_PARAMETER;
