@@ -18,7 +18,9 @@ RPL（Requested Privilege Level，请求特权级，位 0-1）
 
 通过上述内容可以知道CS 段选择子的数据，Index:3，TI:0，RPL:3
 
-C 结构体定义如下，
+C 结构体定义如下
+#include <Windows>
+
 typedef union _SEGMENT_SELECTORS{
     WORD Value;
     struct {
@@ -115,7 +117,9 @@ Segment limit [15:0] 段界限
 CPU 会检查你的内存访问偏移量是否超过了这个 Limit。
 如果偏移量 > Limit，CPU 就会抛出一般保护异常。
 
-// 段描述符
+C 结构体定义如下
+#include <Windows>
+
 typedef struct _SEGMENT_DESCRIPTOR{
     union LowSegDesc{
         DWORD SegmentLimitLow   : 16;
