@@ -1,3 +1,0 @@
-汇编函数头代码
-push ebp		; 0x55
-mov ebp,esp	; 0x8B 0xEC
