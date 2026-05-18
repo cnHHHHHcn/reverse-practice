@@ -115,15 +115,13 @@ Segment limit [15:0] 段界限
 CPU 会检查你的内存访问偏移量是否超过了这个 Limit。
 如果偏移量 > Limit，CPU 就会抛出一般保护异常。
 
-
+如何区分段描述符是数据段还是代码段还是系统段？
 S位 (第12位)	Type[11] (第11位 / X位)	最终段类型
 1 (非系统段)	1 (可执行)	            代码段
 1 (非系统段)	0 (不可执行)	            数据段 (含栈段)
 0 (系统段)	(其他含义)	            系统段 (TSS、门描述符等)
 
-
 C 结构体定义如下
-
 typedef struct _SEGMENT_DESCRIPTOR{
     union LowSegDesc{
         ULONG SegmentLimitLow   : 16;
