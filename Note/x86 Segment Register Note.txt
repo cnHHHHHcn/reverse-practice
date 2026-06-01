@@ -1,0 +1,143 @@
+在调试软件时的CS DS SS ES GS FS都会有一个值。
+比如 CS Hex:001B  Bin:0000 0000 001 1011
+
+段选择子的部分
+Index（索引，位 3-15）
+作用：选择 GDT 或 LDT 中的第几个描述符。
+计算方式：CPU 会将这个索引值乘以 8（因为每个描述符是 8 字节），然后加上 GDT 或 LDT 的基地址，从而定位到具体的描述符。
+容量：最多可以索引 8192 个描述符（2^13 = 8192）。
+
+TI（Table Indicator，表指示器，位 2）
+作用：决定去哪张表里查。
+值 0：选择 GDT（全局描述符表）系统内核。
+值 1：选择 LDT（局部描述符表）用户应用(此方法未被采纳，使用的是分页机制)。
+
+RPL（Requested Privilege Level，请求特权级，位 0-1）
+作用：用于权限检查。它表示当前请求访问该段的特权级别。
+值 0-3：0 是最高特权级（内核），3 是最低特权级（用户程序）。
+
+通过上述内容可以知道CS 段选择子的数据，Index:3，TI:0，RPL:3
+
+C 结构体定义如下
+typedef union _SEGMENT_SELECTORS{
+    USHORT Value;
+    struct {
+        USHORT Index:13;
+        USHORT TI:1;
+        USHORT RPL:2;
+    }
+}SEGMENT_SELECTORS, *PSEGMENT_SELECTORS
+
+通过CS段的Index值可以找到描述符的位置和数据。
+公式:SegmentDescriptor Address = GDT Base + 8* Index
+
+段描述符的部分
+Base [31:24]（基地址的最高 8 位）
+结合低 4 字节里的  Base 15:00  和中间的  Base 23:16 ，拼成一个完整的 32 位地址。
+x64 下：通常被忽略（强制为 0），除FS、GS段寄存器。
+
+
+G [23] — Granularity（粒度）
+作用：它决定了  Segment Limit （段界限）的单位是什么。这是一个“乘法器”。
+
+取值：
+G = 0：粒度是 1 字节。
+此时 Limit 最大值是  0xFFFFF （约 1MB）。
+G = 1：粒度是 4 KB。
+此时 CPU 会把 Limit 的值左移 12 位（乘以 4096）。
+最大值变成  0xFFFFF × 4KB  ≈ 4GB。
+
+D / B [22] — Default operation size（默认操作数大小 / 栈指针大小）
+作用：这个位比较“精神分裂”，它的名字取决于这个段是代码段还是数据/栈段。
+取值：
+如果是代码段（叫 D 位）：
+D = 0：默认指令是 16 位的（比如用 IP 寄存器，操作数默认是 16 位）。
+D = 1：默认指令是 32 位的（比如用 EIP 寄存器，操作数默认是 32 位）。
+如果是数据/栈段（叫 B 位）：
+B = 0：栈顶指针用 16 位寄存器（SP）。
+B = 1：栈顶指针用 32 位寄存器（ESP）。
+x64 下：如果 L=1（64位代码段），这个位通常被忽略或强制为 0。
+
+
+L [21] — 64-bit Code Segment（64 位模式标志）
+作用：这是 x64 架构下的“开关”。
+取值：
+L = 1：告诉 CPU，“这是一个 64 位的代码段！请开启长模式，使用 RIP 和 RAX 等 64 位寄存器。”
+L = 0：兼容模式（运行 32 位或 16 位代码）。
+注意：这个位只对代码段有效。数据段的 L 位必须为 0。
+
+AVL [20] — Available（软件可用位）
+用途：它是留给操作系统开发者用的。比如操作系统可以用这一位来标记这个段是否被使用了，或者用于调试。在 Windows/Linux 中，通常设为 0。
+
+
+Segment Limit [19:16]（段界限的高 4 位）
+逻辑：它和低 4 字节里的  Segment Limit 15:00  拼起来，组成了一个 20 位的 Limit 值
+配合 G 位：这 20 位的值，再配合上面的 G 位（粒度），最终算出这个段的最大长度。
+
+中间的控制位（Type, S, DPL, P）
+
+P [15] — Present（存在位）
+作用：这个段在不在内存里？
+P = 1：在。CPU 可以正常访问。
+P = 0：不在。如果程序试图访问这个段，CPU 会抛出异常（Segment Not Present），操作系统可以借此把段从硬盘加载回内存（类似虚拟内存的换页机制）。
+
+
+DPL [14:13] — Descriptor Privilege Level（描述符特权级）
+作用：这是保护模式的核心！它规定了访问这个段所需的最低权限。
+00：最高权限（内核态，Ring 0）。
+11：最低权限（用户态，Ring 3）。
+规则：只有当当前程序的权限等级（CPL）小于等于 DPL 时，才能访问该段（数字越小权限越高）。比如，用户程序（Ring 3）不能直接访问内核代码段（DPL=0）。
+
+
+S [12] — Descriptor Type（描述符类型）
+作用：区分这是“系统段”还是“普通段”。
+S = 1：代码段或数据段（我们平时用的 CS, DS 都是这种）。
+S = 0：系统段（如 TSS 任务状态段、LDT 局部描述符表）。
+
+Type [11:8] — 类型字段
+作用：详细定义段的属性。这 4 位的具体含义取决于 S 是 0 还是 1。
+如果 S=1（代码/数据段）：
+第 3 位[11]：区分是代码（1）还是数据（0）。
+第 2 位[10]：对于代码段表示“可读吗？”；对于数据段表示“向下扩展吗？”。
+第 1 位[9]：对于代码段表示“可写吗？”（代码通常不可写）；对于数据段表示“可写吗？”。
+第 0 位[8]：访问位（Accessed）。CPU 访问过这个段后，会自动把这一位置 1。操作系统可以用它来做页面置换算法（比如 LRU）。
+
+Base Address [31:16] 段基址
+作用：定义段从哪里开始。除FS、GS其余全为0
+逻辑：这是 32 位基地址（Base）的低半部分。
+配合：它必须和高 4 字节里的  Base 23:16  和  Base 31:24  拼起来，组成完整的 32 位物理/线性地址。
+线性地址计算公式 =  Base  +  偏移量 。
+
+Segment limit [15:0] 段界限
+作用：定义段的长度（大小）。
+逻辑：这是 20 位段界限（Limit）的低半部分。
+配合：它必须和高 4 字节里的  Seg. Limit 19:16  拼起来，才能组成一个完整的 20 位数值。
+CPU 会检查你的内存访问偏移量是否超过了这个 Limit。
+如果偏移量 > Limit，CPU 就会抛出一般保护异常。
+
+如何区分段描述符是数据段还是代码段还是系统段？
+S位 (第12位)	Type[11] (第11位 / X位)	最终段类型
+1 (非系统段)	1 (可执行)	            代码段
+1 (非系统段)	0 (不可执行)	            数据段 (含栈段)
+0 (系统段)	(其他含义)	            系统段 (TSS、门描述符等)
+
+C 结构体定义如下
+typedef struct _SEGMENT_DESCRIPTOR{
+    union LowSegDesc{
+        ULONG SegmentLimitLow   : 16;
+        ULONG BaseAddressLow    : 16;
+    }Low;
+    union HighSegDesc{
+        ULONG BaseAddressMid    : 8;
+        ULONG Type              : 4;
+        ULONG S                 : 1;
+        ULONG DPL               : 2;
+        ULONG P                 : 1;
+        ULONG SegmentLimitHigh  : 4;
+        ULONG AVL               : 1;
+        ULONG L                 : 1;
+        ULONG D_B               : 1;
+        ULONG G                 : 1;
+        ULONG BaseAddressHigh   : 8;
+    }High;
+} SEGMENT_DESCRIPTOR, *P_SEGMENT_DESCRIPTOR;

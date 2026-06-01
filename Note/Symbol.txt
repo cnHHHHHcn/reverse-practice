@@ -1,0 +1,12 @@
+| 代码 | 数据类型 | 英文助记 |
+| X | `void` | 无类型 |
+| H | `int` | 可能是 Int 的 H 结尾? 或者 Half-word? (历史遗留) |
+| M | `float` | 可能是 Real 的 M 结尾? (历史遗留) |
+| N | `double` | 可能是 Double 的 N 结尾? (历史遗留) |
+| D | `char` | Character |
+| G | `wchar_t` | Wide char |
+| I | `unsigned int` | Unsigned Int |
+| J | `long` | Long |
+| PA | `指针` | Pointer to... (后面跟类型代码，如 `PAH` 是 `int*`) |
+| AE | `引用` | Reference to... |
+
