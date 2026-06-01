@@ -1,3 +1,18 @@
+函数原型
+------------------------------------------------------------------------------
+#include <windows.h>
+#include <DbgHelp.h>
+
+#pragma comment(lib, "Dbghelp.lib")
+
+DWORD WINAPI UnDecorateSymbolName(
+  _In_  PCSTR  DecoratedName,    // 输入：乱码符号，如 "?func@@YAXH@Z"
+  _Out_ PSTR   UnDecoratedName,  // 输出：解码后的名字，如 "void func(int)"
+  _In_  DWORD  UndecoratedLength,// 缓冲区大小
+  _In_  DWORD  Flags             // 标志位，通常设为 0
+);
+------------------------------------------------------------------------------
+
 | 代码 | 数据类型 | 英文助记 |
 | X | `void` | 无类型 |
 | H | `int` | 可能是 Int 的 H 结尾? 或者 Half-word? (历史遗留) |
