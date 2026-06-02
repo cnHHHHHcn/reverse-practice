@@ -1,7 +1,8 @@
-Operand Types
-reg: General-purpose register (e.g., eax, ebx, rax, etc.)
-addr: Memory address (e.g., [esp], [ebx + 4], [0x12345678]), referring to the value stored at that address
-val: Immediate value (constant, e.g., 5, -10, 0xFF)
+*************************************************************************************
+Operand Types（操作数类型） 
+reg: General-purpose register (寄存器; e.g., eax, ebx, rax, etc.)
+addr: Memory address (地址; e.g., [esp], [ebx + 4], [0x12345678]), referring to the value stored at that address
+val: Immediate value (立即数常量; e.g., 5, -10, 0xFF)
 All operations assume 32-bit x86 mode. In 64-bit mode, stack operations should adjust the stack pointer by 8 bytes instead of 4.
 -------------------------------------------------------------------------------------
 1.Push the value onto the stack (to save it)
@@ -88,4 +89,50 @@ des:
     pop ecx
     pop eax
 remark: popad does not restore ESP, which could cause the stack pointer to become inconsistent.
+-------------------------------------------------------------------------------------
+
+
+
+*************************************************************************************
+Key Definitions (核心定义说明)
+N is the size of the function's local variables. (N 是函数局部变量的大小。)
+M is the size of the function's arguments (or parameters). (M 是函数传入参数的大小。)
+-------------------------------------------------------------------------------------
+_stdcall (Standard Call) —— 内部平栈
+(被调函数负责清理参数，通常用于 Windows API)
+x86 Caller's Preparation (x86 调用前的准备)
+Before jumping to the target function, the Caller performs these steps:
+Push Arguments: Push the function arguments onto the stack (from right to left).
+Execute call: Pushes the Return Address onto the stack and jumps to the function.
+Standard Function Frame Overview (标准函数帧如下)
+
+push ebp        ; Save the caller's base pointer (Old EBP)
+mov ebp, esp    ; Set the current stack pointer as the new base pointer
+sub esp, N      ; Allocate N bytes of space on the stack for local variables
+……              ; Other Code (Function Body)
+mov esp, ebp    ; Deallocate local variables by resetting the stack pointer
+pop ebp         ; Restore the caller's base pointer (Old EBP)
+ret M           ; Pop Return Address to EIP, AND clean up M bytes of arguments (Internal Stack Cleanup)
+(注：标准写法通常用 ret M 代替 add esp, M + ret，M 为参数的总字节数)
+-------------------------------------------------------------------------------------
+_cdecl (C Declaration) —— 外部平栈
+(调用者负责清理参数，C/C++ 默认约定，支持可变参数)
+x86 Caller's Preparation (x86 调用前的准备)
+Before jumping to the target function, the Caller performs these steps:
+Push Arguments: Push the function arguments onto the stack (from right to left).
+Execute call: Pushes the Return Address onto the stack and jumps to the function.
+Standard Function Frame Overview (标准函数帧如下)
+
+push ebp        ; Save the caller's base pointer (Old EBP)
+mov ebp, esp    ; Set the current stack pointer as the new base pointer
+sub esp, N      ; Allocate N bytes of space on the stack for local variables
+……              ; Other Code (Function Body)
+mov esp, ebp    ; Deallocate local variables by resetting the stack pointer
+pop ebp         ; Restore the caller's base pointer (Old EBP)
+ret             ; Pop Return Address to EIP, then jump back (NO argument cleanup here!)
+
+x86 Caller's Cleanup (x86 调用后的清理 - 仅限 _cdecl)
+After the function returns, the Caller must perform this step:
+
+add esp, M      ; Clean up the arguments that were pushed onto the stack earlier (External Stack Cleanup)
 -------------------------------------------------------------------------------------
