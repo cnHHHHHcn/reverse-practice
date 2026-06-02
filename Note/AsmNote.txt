@@ -9,15 +9,15 @@ All operations assume 32-bit x86 mode. In 64-bit mode, stack operations should a
 src:
     push reg/val/addr
 des:
-    sub esp,4/8
-    mov esp,reg/val/addr
+    sub esp, 4/8
+    mov <type> ptr [esp], reg/val/addr
 -------------------------------------------------------------------------------------
 2.Pop a Value from the top of the stack and store it in 
 src:
     pop reg/addr
 des:
-    mov reg/addr,esp
-    add esp,4/8
+    mov reg/addr, <type> ptr [esp]
+    add esp, 4/8
 -------------------------------------------------------------------------------------
 3.Call the function address named
 src:
@@ -43,16 +43,17 @@ remark: This is the simplest one; more complex examples have not been shown.
 6.Increment or decrement the value of a register or address by 1.
 src:
     inc / dec reg/addr
-dse:
+des:
     add / sub reg/addr,1
 -------------------------------------------------------------------------------------
 7.Exchange the values of two operands.
 src:
-    xchg reg1/addr1,reg2/addr2
+    xchg reg, <type> ptr [addr]
+    xchg reg1, reg2
 des:
-    push reg1/addr1
-    mov reg1/addr1,reg2/addr2
-    pop reg2/addr2
+    push reg
+    mov reg, <type> ptr [addr]
+    pop [addr]
 -------------------------------------------------------------------------------------
 8.Negate the value in a register or address, i.e., compute the two's complement additive inverse.
 src:
@@ -62,7 +63,7 @@ des:
     inc reg/addr
 -------------------------------------------------------------------------------------
 
-Push / Pop all 32 bit geneal Register
+Push / Pop all 32 bit general Register
 -------------------------------------------------------------------------------------
 src:
     pushad
