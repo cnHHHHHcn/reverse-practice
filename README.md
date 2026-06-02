@@ -25,8 +25,9 @@ My reverse engineering practice notes
 
 #### 1. 栈帧与函数调用 (`Stack Project`)
 - **目标**：理解程序的“档案室”管理机制。
-- **实战内容**：通过 `StackTest.cpp` 动态还原 x86 栈帧布局，验证 `EBP`、`ESP` 在函数调用中的变化，以及参数传递的真实过程。
-
+- **实战内容**：
+    - **栈帧布局**: `StackView.cpp` 动态还原 x86 栈帧布局，验证 `EBP`、`ESP` 在函数调用中的变化，以及参数传递的真实过程。
+    - **流程劫持**: `StackHaijack.cpp` 通过直接覆写栈帧中的返回地址，将程序执行流劫持至自定义的 Shellcode 区域，实现寄存器上下文修改与控制流重定向。
 #### 2. C++ 对象模型逆向 (`ClassAndObject Project`)
 - **目标**：撕开 C++ 语法糖，直面内存布局。
 - **实战内容**：
