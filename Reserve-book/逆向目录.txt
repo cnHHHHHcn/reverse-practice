@@ -32,6 +32,8 @@ Windows API
 字符版本
 32位和64位的区别。
 System32，SysWOW64
+Win32数据类型与普遍编程语言数据类型对应
+相关 Win32 术语
 
 Windows PE
 DOS，NT头
