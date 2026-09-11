@@ -144,3 +144,75 @@ typedef struct _SEGMENT_DESCRIPTOR {
 		} DescriptorData;
 	};	
 } SEGMENT_DESCRIPTOR, * P_SEGMENT_DESCRIPTOR;
+
+-------------------------------------------------------------------------------------------
+Global Descriptor Table
+C 结构体定义如下
+typedef struct _GDTR32 {
+	USHORT Limit;
+	ULONG Base;
+} GDTR32, * PGDTR32;
+
+typedef struct _GDTR64 {
+	USHORT Limit;
+	ULONGLONG Base;
+} GDTR64, * PGDTR64;
+
+#if defined(_M_IX86) || defined(_M_ARM)
+typedef GDTR32	GDTR;
+typedef PGDTR32 PGDTR;
+#else
+typedef GDTR64	GDTR;
+typedef PGDTR64	PGDTR;
+#endif 
+
+typedef struct _SEGMENT_CONTEXT {
+	SEGMENT_SELECTORS cs;
+	SEGMENT_SELECTORS ss;
+	SEGMENT_SELECTORS ds;
+	SEGMENT_SELECTORS es;
+	SEGMENT_SELECTORS fs;
+	SEGMENT_SELECTORS gs;
+}SEGMENT_CONTEXT, * PSEGMENT_CONTEXT;
+
+typedef struct _CALLGATE_DESCRIPTOR {
+	union {
+		ULONGLONG Data;
+		struct Descriptor {
+			ULONGLONG SegmentOffsetLow : 16;
+			ULONGLONG SegmentSelector : 16;
+			ULONGLONG ParameterCount : 5;
+			ULONGLONG Reserved : 3;
+			ULONGLONG Type : 4;
+			ULONGLONG S : 1;
+			ULONGLONG DPL : 2;
+			ULONGLONG P : 1;
+			ULONGLONG SegmentOffsetHigh : 16;
+		} DescriptorData;
+	};
+} CALLGATE_DESCRIPTOR, * PCALLGATE_DESCRIPTOR;
+
+void GetSegment(PSEGMENT_CONTEXT pSegContext) {
+	__asm {
+		mov ebx, pSegContext
+		mov ax, cs
+		mov[ebx], ax
+		mov ax, ss
+		mov[ebx + 2], ax
+		mov ax, ds
+		mov[ebx + 4], ax
+		mov ax, es
+		mov[ebx + 6], ax
+		mov ax, fs
+		mov[ebx + 8], ax
+		mov ax, gs
+		mov[ebx + 10], ax
+	}
+}
+
+void GetGDT(PGDTR pGDT) {
+	__asm {
+		mov eax, pGDT;
+		sgdt [eax]
+	}
+}
