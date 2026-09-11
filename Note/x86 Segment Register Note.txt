@@ -19,14 +19,16 @@ RPL（Requested Privilege Level，请求特权级，位 0-1）
 通过上述内容可以知道CS 段选择子的数据，Index:3，TI:0，RPL:3
 
 C 结构体定义如下
-typedef union _SEGMENT_SELECTORS{
-    USHORT Value;
-    struct {
-        USHORT Index:13;
-        USHORT TI:1;
-        USHORT RPL:2;
-    }
-}SEGMENT_SELECTORS, *PSEGMENT_SELECTORS
+typedef struct _SEGMENT_SELECTORS {
+	union{
+		USHORT Data;
+		struct Descriptor {
+			USHORT RPL : 2;
+			USHORT TI : 1;
+			USHORT Index : 13;
+		} DescriptorData;
+	};
+} SEGMENT_SELECTORS, * PSEGMENT_SELECTORS;
 
 通过CS段的Index值可以找到描述符的位置和数据。
 公式:SegmentDescriptor Address = GDT Base + 8* Index
@@ -122,22 +124,23 @@ S位 (第12位)	Type[11] (第11位 / X位)	最终段类型
 0 (系统段)	(其他含义)	            系统段 (TSS、门描述符等)
 
 C 结构体定义如下
-typedef struct _SEGMENT_DESCRIPTOR{
-    union LowSegDesc{
-        ULONG SegmentLimitLow   : 16;
-        ULONG BaseAddressLow    : 16;
-    }Low;
-    union HighSegDesc{
-        ULONG BaseAddressMid    : 8;
-        ULONG Type              : 4;
-        ULONG S                 : 1;
-        ULONG DPL               : 2;
-        ULONG P                 : 1;
-        ULONG SegmentLimitHigh  : 4;
-        ULONG AVL               : 1;
-        ULONG L                 : 1;
-        ULONG D_B               : 1;
-        ULONG G                 : 1;
-        ULONG BaseAddressHigh   : 8;
-    }High;
-} SEGMENT_DESCRIPTOR, *P_SEGMENT_DESCRIPTOR;
+typedef struct _SEGMENT_DESCRIPTOR {
+	union {
+		ULONGLONG Data;
+		struct Descriptor{
+			ULONGLONG SegmentLimitLow : 16;
+			ULONGLONG BaseAddressLow : 16;
+			ULONGLONG BaseAddressMid : 8;
+			ULONGLONG Type : 4;
+			ULONGLONG S : 1;
+			ULONGLONG DPL : 2;
+			ULONGLONG P : 1;
+			ULONGLONG SegmentLimitHigh : 4;
+			ULONGLONG AVL : 1;
+			ULONGLONG L : 1;
+			ULONGLONG D_B : 1;
+			ULONGLONG G : 1;
+			ULONGLONG BaseAddressHigh : 8;
+		} DescriptorData;
+	};	
+} SEGMENT_DESCRIPTOR, * P_SEGMENT_DESCRIPTOR;
