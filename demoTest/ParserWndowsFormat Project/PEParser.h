@@ -223,6 +223,8 @@ namespace PE {
 	STATUS Read(const wchar_t* FileName, void*& out_pFileBuffer, DWORD& out_FileSize);
 	STATUS IsValid(void* pBuffer, IMAGE_NT_HEADERS*& out_pNtHeader);
 	STATUS SetSizeOfImage(void* pFileBuffer, DWORD NewSizeOfImage);
+	STATUS GetSizeOfImage(void* pFileBuffer, DWORD& out_SizeOfImage);
+	STATUS GetImageBase(void* pFileBuffer, ULONG_PTR& out_ImageBase);
 	STATUS GetMachineType(void* pFileBuffer, WORD& out_MachineType);
 	STATUS GetSubSystem(void* pFileBuffer, WORD& out_SubSystemInfo);
 	STATUS GetEntryPoint(void* pFileBuffer, DWORD& out_OEP_Address);

@@ -53,11 +53,6 @@ static uintptr_t GetModuleBaseAddress(DWORD pid, const wchar_t* Module) {
  */
 PE::STATUS  PE::Read(const wchar_t* FileName, void*& out_pFileBuffer, DWORD& out_FileSize) {
 	if (FileName == nullptr) return PE_STATUS_INVALID_PARAMETER;
-	void* out_param_test = nullptr;
-	out_param_test = &out_pFileBuffer;
-	if (out_param_test == nullptr) return PE_STATUS_INVALID_PARAMETER;
-	out_param_test = &out_FileSize;
-	if (out_param_test == nullptr) return PE_STATUS_INVALID_PARAMETER;
 
 	BOOL apiRTN = FALSE;
 	STATUS RTN = PE_STATUS_SUCCESS;
@@ -108,8 +103,6 @@ PE::STATUS  PE::Read(const wchar_t* FileName, void*& out_pFileBuffer, DWORD& out
  */
 PE::STATUS PE::IsValid(void* pBuffer, IMAGE_NT_HEADERS*& out_pNtHeader) {
 	if (pBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
-	void* out_param_test = &out_pNtHeader;
-	if (out_param_test == nullptr) return PE_STATUS_INVALID_PARAMETER;
 	out_pNtHeader = nullptr;
 	IMAGE_DOS_HEADER* pDosHeader = static_cast<IMAGE_DOS_HEADER*>(pBuffer);
 	if (pDosHeader->e_magic == IMAGE_DOS_SIGNATURE) {
@@ -121,6 +114,9 @@ PE::STATUS PE::IsValid(void* pBuffer, IMAGE_NT_HEADERS*& out_pNtHeader) {
 	}
 	return PE_STATUS_INVALID_FORMAT;
 }
+
+
+
 
 /**
  * @brief 设置 PE 文件的内存映像大小 (SizeOfImage)
@@ -153,6 +149,54 @@ PE::STATUS PE::SetSizeOfImage(void* pFileBuffer, DWORD NewSizeOfImage)
 }
 
 /**
+ * @brief 获取 PE 文件的镜像大小 (SizeOfImage)
+ *
+ * 该函数用于获取 PE 文件的镜像大小。
+ * 镜像大小是指当 PE 文件被加载到内存时，整个映像（包括所有节区及对齐填充）所需的总字节数。
+ *
+ *
+ * @param pFileBuffer     [in]  指向 PE 文件内存缓冲区的指针 (需先通过 IsValid 校验)
+ * @param out_MachineType [out] 输出参数，返回机器类型常量 (WORD 类型)
+ * @return PE::STATUS					获取结果状态码
+ * @retval PE_STATUS_SUCCESS          	获取成功
+ * @retval PE_STATUS_INVALID_PARAMETER 	输入缓冲区指针为空
+ * @retval PE_STATUS_INVALID_FORMAT    	文件格式无效，无法定位到 Machine 字段
+ */
+PE::STATUS PE::GetSizeOfImage(void* pFileBuffer, DWORD& out_SizeOfImage) {
+	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
+	IMAGE_NT_HEADERS* pNtHeader = nullptr;
+	if (IsValid(pFileBuffer, pNtHeader) == PE_STATUS_SUCCESS) {
+		out_SizeOfImage = pNtHeader->OptionalHeader.SizeOfImage;
+		return PE_STATUS_SUCCESS;
+	}
+	return PE_STATUS_INVALID_FORMAT;
+}
+
+/**
+ * @brief 获取 PE 文件的镜像基址 (Image Base)
+ *
+ * 该函数用于获取 PE 文件的镜像基址。
+ * 镜像基址是指当 PE 文件被加载到内存时，映像的首地址。
+ *
+ *
+ * @param pFileBuffer     [in]  指向 PE 文件内存缓冲区的指针 (需先通过 IsValid 校验)
+ * @param out_MachineType [out] 输出参数，返回机器类型常量 (WORD 类型)
+ * @return PE::STATUS					获取结果状态码
+ * @retval PE_STATUS_SUCCESS          	获取成功
+ * @retval PE_STATUS_INVALID_PARAMETER 	输入缓冲区指针为空
+ * @retval PE_STATUS_INVALID_FORMAT    	文件格式无效，无法定位到 Machine 字段
+ */
+PE::STATUS PE::GetImageBase(void* pFileBuffer, ULONG_PTR& out_ImageBase) {
+	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
+	IMAGE_NT_HEADERS* pNtHeader = nullptr;
+	if (IsValid(pFileBuffer, pNtHeader) == PE_STATUS_SUCCESS) {
+		out_ImageBase = pNtHeader->OptionalHeader.ImageBase;
+		return PE_STATUS_SUCCESS;
+	}
+	return PE_STATUS_INVALID_FORMAT;
+}
+
+/**
  * @brief 获取 PE 文件的机器类型 (Machine Type)
  *
  * 该函数用于识别 PE 文件的目标运行架构。
@@ -173,8 +217,6 @@ PE::STATUS PE::SetSizeOfImage(void* pFileBuffer, DWORD NewSizeOfImage)
  */
 PE::STATUS PE::GetMachineType(void* pFileBuffer, WORD& out_MachineType) {
 	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
-	void* out_param_test = &out_MachineType;
-	if (out_param_test == nullptr) return PE_STATUS_INVALID_PARAMETER;
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
 	if (IsValid(pFileBuffer, pNtHeader) == PE_STATUS_SUCCESS) {
 		out_MachineType = pNtHeader->FileHeader.Machine;
@@ -205,8 +247,6 @@ PE::STATUS PE::GetMachineType(void* pFileBuffer, WORD& out_MachineType) {
  */
 PE::STATUS PE::GetSubSystem(void* pFileBuffer, WORD& out_SubSystemInfo) {
 	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
-	void* out_param_test = &out_SubSystemInfo;
-	if (out_param_test == nullptr) return PE_STATUS_INVALID_PARAMETER;
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
 	if (IsValid(pFileBuffer, pNtHeader) == PE_STATUS_SUCCESS) {
 		out_SubSystemInfo = pNtHeader->OptionalHeader.Subsystem;
@@ -236,8 +276,6 @@ PE::STATUS PE::GetSubSystem(void* pFileBuffer, WORD& out_SubSystemInfo) {
  */
 PE::STATUS PE::GetEntryPoint(void* pFileBuffer, DWORD& out_OEP_Address) {
 	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
-	void* out_param_test = &out_OEP_Address;
-	if (out_param_test == nullptr) return PE_STATUS_INVALID_PARAMETER;
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
 	if (IsValid(pFileBuffer, pNtHeader) == PE_STATUS_SUCCESS) {
 		out_OEP_Address = pNtHeader->OptionalHeader.AddressOfEntryPoint;
@@ -269,8 +307,6 @@ PE::STATUS PE::GetEntryPoint(void* pFileBuffer, DWORD& out_OEP_Address) {
  */
 PE::STATUS PE::GetPeFormat(void* pFileBuffer, WORD& out_HDR) {
 	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
-	void* out_param_test = &out_HDR;
-	if (out_param_test == nullptr) return PE_STATUS_INVALID_PARAMETER;
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
 	if (IsValid(pFileBuffer, pNtHeader) == PE_STATUS_SUCCESS) {
 		out_HDR = pNtHeader->OptionalHeader.Magic;
@@ -302,8 +338,6 @@ PE::STATUS PE::GetPeFormat(void* pFileBuffer, WORD& out_HDR) {
  */
 PE::STATUS PE::GetSectionName(void* pFileBuffer, void*& out_SectionName, size_t& SectionNameSize) {
 	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
-	void* out_param_test = &out_SectionName;
-	if (out_param_test == nullptr) return PE_STATUS_INVALID_PARAMETER;
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
 	out_SectionName = nullptr;
 	if (IsValid(pFileBuffer, pNtHeader) == PE_STATUS_SUCCESS) {
@@ -354,11 +388,6 @@ PE::STATUS PE::GetSectionName(void* pFileBuffer, void*& out_SectionName, size_t&
  */
 PE::STATUS PE::GetPEChecksum(void* pFileBuffer, DWORD FileSize, DWORD& file_Checksum, DWORD& out_Checksum, bool& out_IsPass) {
 	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
-	void* out_param_test = nullptr;
-	out_param_test = &out_Checksum;
-	if (out_param_test == nullptr) return PE_STATUS_INVALID_PARAMETER;
-	out_param_test = &out_IsPass;
-	if (out_param_test == nullptr) return PE_STATUS_INVALID_PARAMETER;
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
 	STATUS RTN = IsValid(pFileBuffer, pNtHeader);
 	if (RTN == PE_STATUS_SUCCESS) {
@@ -963,9 +992,6 @@ DWORD PE::FoaToRva(void* pBuffer, DWORD FOA) {
  */
 PE::STATUS PE::BuildMemoryImage(void* pFileBuffer, HMODULE& out_pMemoryImage) {
 	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
-	void* out_param_test = nullptr;
-	out_param_test = &out_pMemoryImage;
-	if (out_param_test == nullptr) return PE_STATUS_INVALID_PARAMETER;
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
 	// 验证文件头有效性并获取 NT 头指针
 	if (IsValid(pFileBuffer, pNtHeader) == PE_STATUS_SUCCESS) {
@@ -1057,8 +1083,6 @@ PE::STATUS PE::BuildMemoryImage(void* pFileBuffer, HMODULE& out_pMemoryImage) {
  */
 PE::STATUS PE::GetExportTable(void* pFileBuffer, ExportInfo& out_ExpInfo) {
 	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
-	void* out_param_test = &out_ExpInfo;
-	if (out_param_test == nullptr) return PE_STATUS_INVALID_PARAMETER;
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
 
 	// 1. 验证 PE 有效性
@@ -1229,8 +1253,6 @@ PE::STATUS PE::GetExportTable(void* pFileBuffer, ExportInfo& out_ExpInfo) {
  */
 PE::STATUS PE::GetExportTable(HMODULE pMemoryImage, ExportInfo& out_ExpInfo) {
 	if (pMemoryImage == nullptr) return PE_STATUS_INVALID_PARAMETER;
-	void* out_param_test = &out_ExpInfo;
-	if (out_param_test == nullptr) return PE_STATUS_INVALID_PARAMETER;
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
 	if (IsValid(pMemoryImage, pNtHeader) != PE_STATUS_SUCCESS) return PE_STATUS_INVALID_FORMAT;
 	// 额外验证 Optional Header 的 Magic 字段，确保是 PE32 或 PE32+ 格式
@@ -1812,8 +1834,13 @@ PE::STATUS PE::Relocation(HMODULE pMemoryImage, HMODULE pRemoteImage) {
 		// 3. 定位重定位表起始位置
 		IMAGE_BASE_RELOCATION* pBaseReloc = reinterpret_cast<IMAGE_BASE_RELOCATION*>(reinterpret_cast<char*>(pMemoryImage) + RelocDir.VirtualAddress);
 
+		ULONG_PTR ImageBase = pNtHeader->OptionalHeader.ImageBase; // 获取首选基址 (ImageBase)
+
 		// 4. 计算基址差值 (Delta)  Delta = 实际加载地址 - 首选基址 (ImageBase)
-		ULONG_PTR Delta = (ULONG_PTR)pRemoteImage - (ULONG_PTR)pMemoryImage;
+		ULONG_PTR Delta = (ULONG_PTR)pRemoteImage - ImageBase;
+
+		// 这个话是不对的，在此仅作警示。
+		// ULONG_PTR Delta = (ULONG_PTR)pRemoteImage – (ULONG_PTR)pMemoryImage;
 
 		// 如果差值为 0，说明加载地址与预期一致，无需重定位
 		if (Delta == 0) return PE_STATUS_SUCCESS;
@@ -1975,7 +2002,6 @@ PE::STATUS PE::SetSectionProperty(HANDLE hProcess, void* pFileBuffer, HMODULE pM
 			// 使用 VirtualProtectEx 操作远程进程内存
 			if (!VirtualProtectEx(hProcess, pSectionAddr, pSectionHeader[SectionIndex].Misc.VirtualSize, memProperty, &oldmemPropery)) 
 				RTN = PE_STATUS_SET_SECTION_PROPERTY_FAILURE;
-			pSectionHeader++;
 		}
 		return RTN;
 	}
@@ -2006,8 +2032,6 @@ PE::STATUS PE::SetSectionProperty(HANDLE hProcess, void* pFileBuffer, HMODULE pM
  */
 PE::STATUS PE::GetResourceTable(void* pFileBuffer, ResourceInfo& out_ResInfo, ResourceType TypeID) {
 	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
-	void* out_param_test = &out_ResInfo;
-	if (out_param_test == nullptr) return PE_STATUS_INVALID_PARAMETER;
 
 	// 1. 初始化输出参数
 	out_ResInfo.Items = nullptr;
@@ -2168,8 +2192,6 @@ PE::STATUS PE::GetResourceTable(void* pFileBuffer, ResourceInfo& out_ResInfo, Re
 
 PE::STATUS PE::GetTlsTable(void* pFileBuffer, TLS_Info& out_tls_Info){
 	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
-	void* out_param_test = &out_tls_Info;
-	if (out_param_test == nullptr) return PE_STATUS_INVALID_PARAMETER;
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
 	if (IsValid(pFileBuffer, pNtHeader) != PE_STATUS_SUCCESS) return PE_STATUS_INVALID_FORMAT;
 	// 额外验证 Optional Header 的 Magic 字段，确保是 PE32 或 PE32+ 格式
@@ -2236,8 +2258,7 @@ PE::STATUS PE::GetTlsTable(void* pFileBuffer, TLS_Info& out_tls_Info){
  */
 PE::STATUS PE::GetDebugTable(void* pFileBuffer, DebugInfo& out_dbgInfo) {
 	if (pFileBuffer == nullptr) return PE_STATUS_INVALID_PARAMETER;
-	void* out_param_test = &out_dbgInfo;
-	if (out_param_test == nullptr) return PE_STATUS_INVALID_PARAMETER;
+
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
 	if (IsValid(pFileBuffer, pNtHeader) != PE_STATUS_SUCCESS) return PE_STATUS_INVALID_FORMAT;
 
@@ -2276,11 +2297,6 @@ PE::STATUS PE::GetDebugTable(void* pFileBuffer, DebugInfo& out_dbgInfo) {
 PE::STATUS PE::GetDebugPDB(void* pFileBuffer, DebugInfo dbgInfo, void*& out_cv_Info, char*& out_PdbFile){
 	if (pFileBuffer == nullptr)	return PE_STATUS_INVALID_PARAMETER;
 	if (dbgInfo.Count == 0 || dbgInfo.Items == nullptr) return PE_STATUS_INVALID_PARAMETER;
-	void* out_param_test = nullptr;
-	out_param_test = &out_cv_Info;
-	if (out_param_test == nullptr) return PE_STATUS_INVALID_PARAMETER;
-	out_param_test = &out_PdbFile;
-	if (out_param_test == nullptr) return PE_STATUS_INVALID_PARAMETER;
 
 	IMAGE_NT_HEADERS* pNtHeader = nullptr;
 	if (IsValid(pFileBuffer, pNtHeader) != PE_STATUS_SUCCESS) return PE_STATUS_INVALID_FORMAT;
@@ -2467,8 +2483,6 @@ PE::STATUS PE::CalculateEntropy(const void* buffer, size_t size, double& out_Ent
 		out_Entropy = 0.0;
 		return PE_STATUS_INVALID_PARAMETER;
 	}
-	void* out_param_test = &out_Entropy;
-	if (out_param_test == nullptr) return PE_STATUS_INVALID_PARAMETER;
 
 	// 统计每个字节值的频率
 	unsigned long long frequency[256] = { 0 };
