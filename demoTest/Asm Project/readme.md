@@ -1,4 +1,4 @@
-# AsmTestDemo 汇编对照示例说明
+# Asm Project 汇编对照示例说明
 
 ## 1. 项目定位
 
@@ -18,7 +18,7 @@
 ## 2. 目录结构
 
 ```text
-AsmTestDemo/
+Asm Project/
 ├─ Branch/
 │  ├─ AsmTest-Branch.cpp
 │  └─ Release/
