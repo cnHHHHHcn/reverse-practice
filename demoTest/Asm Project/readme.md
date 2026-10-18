@@ -278,7 +278,8 @@ Dog d3 = std::move(d1);
 
 程序中经常看到：
 
-``` asm x86
+asm x86
+```
 push ebp
 mov ebp, esp
 ...
@@ -288,7 +289,8 @@ mov esp, ebp
 pop ebp
 ```
 
-```asm x64
+asm x64
+```
 sub rsp, 28h
 ...
 call printf
