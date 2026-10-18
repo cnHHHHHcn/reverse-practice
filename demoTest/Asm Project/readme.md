@@ -69,8 +69,6 @@ Asm Project/
 
 如果某些旧目录中暂时只有一个 `*.exe.i64`，该文件可以作为原始版本的基准数据库；新版本目录应优先补齐 `*Original.exe.i64` 和 `*Reversed.exe.i64` 的成对结构。
 
-`Reversed` 数据库中的具体人工分析痕迹、注释统计和已知标注问题见 [Reversed 逆向痕迹说明](./Reversed-traces.md)。
-
 目录中没有 `.sln` 或 `.vcxproj` 工程文件，现有 EXE、PDB 和 IDA 数据库是预先构建好的。需要修改或重新编译时，应为每个源码单独建立 Visual Studio 控制台项目，或使用 MSVC 命令行编译。
 
 ## 3. 示例总览
@@ -278,9 +276,19 @@ Dog d3 = std::move(d1);
 | 典型调用代码 | `push arg`、`call`、`add esp, n` | 设置 `rcx/rdx/r8/r9`、`call` |
 | 异常展开信息 | 依赖 x86 异常链 | 常见 `.pdata`、`.xdata` 展开信息 |
 
-x64 程序中经常看到：
+程序中经常看到：
 
-```asm
+``` asm x86
+push ebp
+mov ebp, esp
+...
+call _printf
+...
+mov esp, ebp
+pop ebp
+```
+
+```asm x64
 sub rsp, 28h
 ...
 call printf
@@ -288,7 +296,7 @@ call printf
 add rsp, 28h
 ```
 
-其中 `0x28` 通常由 32 字节影子空间和栈对齐组成，不应简单理解成普通的 40 字节局部变量。
+其中在 x64 中 `0x28` 通常由 32 字节影子空间和栈对齐组成，不应简单理解成普通的 40 字节局部变量。
 
 ## 6. 运行方式
 
@@ -377,18 +385,6 @@ chcp 936
 - 异常处理：`/EHsc`
 
 `ClassAndObject_And_STL` 使用了 `std::make_unique` 等 C++14 及以上特性，建议直接使用 C++17 编译。
-
-在对应的 x86 或 x64 Developer Command Prompt 中，可以使用类似命令：
-
-```bat
-cl /nologo /O2 /EHsc /std:c++17 /Zi AsmTest-Branch.cpp /link /DEBUG
-```
-
-如果要保留类似 `Branch` 文件中 `/Od` 版本的对照，可再编译一份禁用优化的程序：
-
-```bat
-cl /nologo /Od /EHsc /std:c++17 /Zi AsmTest-Branch.cpp /link /DEBUG /OUT:AsmTest-Branch-Od.exe
-```
 
 编译器版本、优化选项、运行库和目标架构都会影响最终汇编。分析时应以当前 EXE 的实际反汇编为准。
 
