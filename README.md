@@ -42,17 +42,17 @@ reverse-practice/
 
 ### 2. 汇编对照与编译器行为
 
-[demoTest/Asm Project](./demoTest/Asm%20Project/readme.md) 是源码与反汇编的直接对照实验集。每个主题都提供 x86/x64 Release 程序、PDB 符号和 IDA 数据库，适合观察高级语言如何转换为机器指令。
+[demoTest/Asm Project](./demoTest/Asm%20Project/) 是源码与反汇编的直接对照实验集。每个主题都提供 x86/x64 Release 程序、PDB 符号和 IDA 数据库，适合观察高级语言如何转换为机器指令。
 
 | 模块 | 主要内容 | 观察重点 |
 |---|---|---|
-| [Branch](./demoTest/Asm%20Project/Branch/AsmTest-Branch.cpp) | `if`、多分支、`switch`、编译优化 | 条件跳转、跳转表、常量传播、死代码消除 |
-| [Loops](./demoTest/Asm%20Project/Loops/AsmTest-Loops.cpp) | `for`、嵌套循环、`do-while`、`break/continue` | 循环条件、循环回边、循环变量 |
-| [Pointer](./demoTest/Asm%20Project/Pointer/AsmTest-Pointer.cpp) | 结构体数组、指针参数、指针遍历、排序 | 字段偏移、数组寻址、指针算术 |
-| [Call_And_Recursion](./demoTest/Asm%20Project/Call_And_Recursion/AsmTest-Call_And_recursion.cpp) | 普通递归、尾递归、函数调用 | 栈帧、参数传递、返回值和尾调用 |
-| [C_try](./demoTest/Asm%20Project/C_try/AsmTest-C_try.cpp) | `setjmp/longjmp` 模拟异常 | 执行环境保存、恢复和非正常跳转 |
-| [C++_try](./demoTest/Asm%20Project/C++_try/AsmTest-C++_try.cpp) | C++ `try/catch` 与自定义异常 | 异常对象、异常表、栈展开 |
-| [ClassAndObject_And_STL](./demoTest/Asm%20Project/ClassAndObject_And_STL/AsmTest-ClassAndObject_And_STL.cpp) | 继承、虚函数、RTTI、STL | vptr/vtable、间接调用、堆分配 |
+| [Branch](./demoTest/Asm%20Project/Branch/) | `if`、多分支、`switch`、编译优化 | 条件跳转、跳转表、常量传播、死代码消除 |
+| [Loops](./demoTest/Asm%20Project/Loops/) | `for`、嵌套循环、`do-while`、`break/continue` | 循环条件、循环回边、循环变量 |
+| [Pointer](./demoTest/Asm%20Project/Pointer/) | 结构体数组、指针参数、指针遍历、排序 | 字段偏移、数组寻址、指针算术 |
+| [Call_And_Recursion](./demoTest/Asm%20Project/Call_And_Recursion/) | 普通递归、尾递归、函数调用 | 栈帧、参数传递、返回值和尾调用 |
+| [C_try](./demoTest/Asm%20Project/C_try/) | `setjmp/longjmp` 模拟异常 | 执行环境保存、恢复和非正常跳转 |
+| [C++_try](./demoTest/Asm%20Project/C++_try/) | C++ `try/catch` 与自定义异常 | 异常对象、异常表、栈展开 |
+| [ClassAndObject_And_STL](./demoTest/Asm%20Project/ClassAndObject_And_STL/) | 继承、虚函数、RTTI、STL | vptr/vtable、间接调用、堆分配 |
 
 完整使用说明、x86/x64 调用约定对照和阅读顺序见 [Asm Project 说明](./demoTest/Asm%20Project/readme.md)。
 
